@@ -6,6 +6,7 @@ from configuracion import Config
 from servicios.servicio_catalogo.presentacion.rutas import catalogo_bp
 from servicios.servicio_autenticacion.presentacion.rutas import auth_bp  # <- NUEVO
 from servicios.api_externa.presentacion.rutas_books import books_bp
+from servicios.api_externa.presentacion.rutas_postal import postal_bp
 
 def crear_app():
     app = Flask(
@@ -21,6 +22,7 @@ def crear_app():
     app.register_blueprint(catalogo_bp)  # mantiene tu registro existente
     app.register_blueprint(auth_bp)      # <- NUEVO: /api/v1/auth/*
     app.register_blueprint(books_bp)     # <- NUEVO: /api/v1/books
+    app.register_blueprint(postal_bp)    # <- NUEVO: /api/v1/postal/<codigo>
 
     # ----------------- Carrito -----------------
     def get_cart():

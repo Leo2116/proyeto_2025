@@ -109,6 +109,29 @@ class UsuarioORM(Base):
     actualizado_en = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
+# =========  NUEVO: FACTURACIÓN LOCAL  =========
+class FacturaORM(Base):
+    __tablename__ = "facturas"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    numero_factura = Column(String, unique=True, nullable=False, index=True)
+    user_email = Column(String, nullable=True)
+    total = Column(Float, nullable=False, default=0.0)
+    fecha = Column(DateTime, server_default=func.now(), nullable=False)
+
+
+class FacturaItemORM(Base):
+    __tablename__ = "factura_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    id_factura = Column(Integer, nullable=False, index=True)
+    producto_id = Column(String, nullable=True)
+    nombre = Column(String, nullable=False)
+    precio = Column(Float, nullable=False, default=0.0)
+    cantidad = Column(Integer, nullable=False, default=1)
+    subtotal = Column(Float, nullable=False, default=0.0)
+
+
 # ----------------------------------------------------------------------
 # Helpers DB
 # ----------------------------------------------------------------------

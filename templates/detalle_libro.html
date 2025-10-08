@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="product-page-title">Detalle del Producto</title>
+    <link href="/static/css/style.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Iconos Phosphor -->
+    <script src="https://unpkg.com/phosphor-icons"></script>
+    <style>
+        /* Estilos especificos para la pagina de detalle */
+        .detail-container {
+            padding: 1rem;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            text-decoration: none;
+            color: var(--primary-color);
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            font-size: 1rem;
+        }
+
+        .product-detail-card {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: 1.5rem;
+        }
+        
+        .product-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .product-image-large {
+            width: 100%;
+            max-height: 400px;
+            object-fit: contain;
+            border-radius: var(--border-radius);
+            margin-bottom: 1rem;
+        }
+        
+        .detail-info {
+            padding: 0 1rem;
+        }
+
+        .detail-info h1 {
+            font-size: 1.8rem;
+            margin-bottom: 5px;
+            color: var(--text-color);
+        }
+
+        .price-large {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin: 1rem 0;
+        }
+
+        .stock-status {
+            font-weight: 600;
+            padding: 5px 0;
+            margin-bottom: 1rem;
+        }
+
+        .stock-available { color: green; }
+        .stock-low { color: orange; }
+        .stock-out { color: red; }
+
+        .details-list {
+            list-style: none;
+            padding: 0;
+            margin-bottom: 1.5rem;
+        }
+
+        .details-list li {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .details-list strong {
+            display: inline-block;
+            width: 100px; /* Ancho fijo para alineacion */
+            color: var(--secondary-color);
+        }
+        
+        /* Adaptacion a Desktop */
+        @media (min-width: 768px) {
+            .product-detail-card {
+                display: flex;
+                gap: 2rem;
+            }
+            
+            .image-col {
+                flex: 1;
+            }
+            
+            .info-col {
+                flex: 2;
+                text-align: left;
+            }
+            
+            .product-image-large {
+                width: 100%;
+                max-width: 300px;
+                height: auto;
+                margin: 0;
+            }
+        }
+    </style>
+</head>
+<body class="mobile-first-body">
+
+    <!-- 1. HEADER MOVIL (Fijo en la parte superior) -->
+    <header class="header-movil">
+        <a href="/" class="logo-container">
+            <i class="ph-book-open-text logo-icon"></i>
+            <span class="logo-text">Librería GT</span>
+        </a>
+        <div class="header-icons">
+            <!-- No hay boton de busqueda en detalle, solo carrito y usuario -->
+            <button><i class="ph-shopping-cart"></i></button>
+            <button><i class="ph-user"></i></button>
+        </div>
+    </header>
+
+    <!-- 2. CONTENIDO PRINCIPAL -->
+    <main class="detail-container">
+        <a href="/" class="back-button">
+            <i class="ph-arrow-left" style="margin-right: 5px;"></i> Volver al Catálogo
+        </a>
+        
+        <div id="loading-spinner" class="status-message">Cargando detalles del producto...</div>
+        <div id="error-message" class="status-message hidden" style="background-color: #f8d7da; color: #721c24;"></div>
+
+        <!-- Tarjeta de Detalle que se llenara con JS -->
+        <section id="product-detail-section" class="product-detail-card hidden">
+            <div class="image-col">
+                <img id="product-img" src="" alt="Imagen del Producto" class="product-image-large">
+            </div>
+            
+            <div class="info-col">
+                <p id="product-type" class="product-type"></p>
+                <h1 id="product-name"></h1>
+                
+                <p id="stock-status" class="stock-status"></p>
+
+                <ul id="specific-details" class="details-list">
+                    <!-- Detalles especificos (Autor/Editorial o Material/Categoria) -->
+                </ul>
+                
+                <p id="product-price" class="price-large"></p>
+                
+                <button id="add-to-cart-btn" class="add-to-cart-btn"><i class="ph-plus"></i> Agregar al Carrito</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- 3. FOOTER -->
+    <footer class="footer">
+        <p>&copy; 2024 Librería GT.</p>
+    </footer>
+
+    <script>
+        // Lógica JavaScript para cargar el producto
+        document.addEventListener('DOMContentLoaded', () => {
+            const API_BASE = '/api/v1/catalogo/productos/';
+            const loadingSpinner = document.getElementById('loading-spinner');
+            const errorMessage = document.getElementById('error-message');
+            const detailSection = document.getElementById('product-detail-section');
+            const urlParams = new URLSearchParams(window.location.search);
+            const productId = urlParams.get('id'); // Obtener el ID de la URL: /detalle_producto.html?id=UTIL001
+
+            if (!productId) {
+                loadingSpinner.classList.add('hidden');
+                errorMessage.textContent = 'Error: ID de producto no especificado en la URL.';
+                errorMessage.classList.remove('hidden');
+                return;
+            }
+            
+            async function fetchProductDetails() {
+                try {
+                    const response = await fetch(API_BASE + productId);
+                    const product = await response.json();
+
+                    loadingSpinner.classList.add('hidden');
+                    
+                    if (response.ok) {
+                        renderProduct(product);
+                        detailSection.classList.remove('hidden');
+                    } else {
+                        errorMessage.textContent = product.error || 'Producto no encontrado.';
+                        errorMessage.classList.remove('hidden');
+                    }
+                } catch (error) {
+                    loadingSpinner.classList.add('hidden');
+                    errorMessage.textContent = 'Error de conexión con la API del Catálogo.';
+                    errorMessage.classList.remove('hidden');
+                    console.error('Fetch error:', error);
+                }
+            }
+            
+            function renderProduct(product) {
+                document.getElementById('product-page-title').textContent = product.nombre;
+                document.getElementById('product-type').textContent = product.tipo === 'Libro' ? 'Libro' : 'Útil Escolar';
+                document.getElementById('product-name').textContent = product.nombre;
+                document.getElementById('product-price').textContent = `Q ${product.precio.toFixed(2)}`;
+                
+                // Manejo de la imagen
+                const imgElement = document.getElementById('product-img');
+                const imgPath = product.imagen_url.startsWith('http') 
+                                ? product.imagen_url 
+                                : `/static/img/${product.id_producto}.jpg`;
+                imgElement.src = imgPath;
+                imgElement.onerror = () => {
+                    // Fallback si la imagen no carga
+                    imgElement.src = `https://placehold.co/300x450/CCCCCC/333333?text=${product.tipo}`;
+                };
+
+                // Estado de Stock
+                const stockElement = document.getElementById('stock-status');
+                if (product.stock > 10) {
+                    stockElement.textContent = `En Stock (${product.stock} unidades)`;
+                    stockElement.className = 'stock-status stock-available';
+                } else if (product.stock > 0) {
+                    stockElement.textContent = `¡Stock Bajo! (${product.stock} unidades)`;
+                    stockElement.className = 'stock-status stock-low';
+                } else {
+                    stockElement.textContent = 'Agotado Temporalmente';
+                    stockElement.className = 'stock-status stock-out';
+                    document.getElementById('add-to-cart-btn').disabled = true;
+                }
+
+                // Detalles Especificos (Libro vs. Útil Escolar)
+                const detailsList = document.getElementById('specific-details');
+                detailsList.innerHTML = ''; // Limpiar lista anterior
+                
+                if (product.tipo === 'Libro') {
+                    detailsList.innerHTML = `
+                        <li><strong>Autor:</strong> ${product.autor || 'N/A'}</li>
+                        <li><strong>Editorial:</strong> ${product.editorial || 'N/A'}</li>
+                        <li><strong>ISBN:</strong> ${product.isbn || 'N/A'}</li>
+                        <li><strong>Páginas:</strong> ${product.paginas || 'N/A'}</li>
+                    `;
+                } else if (product.tipo === 'UtilEscolar') {
+                    detailsList.innerHTML = `
+                        <li><strong>Categoría:</strong> ${product.categoria || 'N/A'}</li>
+                        <li><strong>Material:</strong> ${product.material || 'N/A'}</li>
+                        <li><strong>SKU:</strong> ${product.id_producto}</li>
+                    `;
+                }
+                
+                // El boton de carrito aun no tiene la logica de guardar.
+                document.getElementById('add-to-cart-btn').onclick = () => {
+                    // TODO: Implementar logica de agregar al carrito
+                    alert(`Simulación: Agregado ${product.nombre} al carrito!`);
+                };
+            }
+
+            fetchProductDetails();
+        });
+    </script>
+</body>
+</html>

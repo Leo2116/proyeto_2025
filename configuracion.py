@@ -1,0 +1,56 @@
+# configuracion.py
+import os
+from pathlib import Path
+
+try:
+    # Cargar variables de entorno si existe .env (opcional)
+    from dotenv import load_dotenv, find_dotenv
+    load_dotenv(find_dotenv())
+except Exception:
+    pass
+
+
+class Config:
+    """
+    Configuración global de la aplicación Flask.
+    Mantiene la base de datos SQLite 'db_libreria.sqlite' en la raíz del proyecto.
+    """
+
+    # -------------------- Flask / SQLAlchemy --------------------
+    # Ruta a la base de datos (fija en la raíz del proyecto)
+    BASE_DIR = Path(__file__).resolve().parent
+    DB_PATH = BASE_DIR / "db_libreria.sqlite"
+    SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI", f"sqlite:///{DB_PATH}")
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    JSON_AS_ASCII = False
+
+    # -------------------- Seguridad / Sesiones --------------------
+    SECRET_KEY = os.getenv("SECRET_KEY", "clave-secreta-para-prototipo")
+    SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+    SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "False").lower() == "true"
+
+    # -------------------- APIs Externas --------------------
+    GOOGLE_BOOKS_API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY")
+
+    # -------------------- Stripe (modo prueba) --------------------
+    # Soporta tanto STRIPE_PUBLISHABLE_KEY como STRIPE_PUBLIC_KEY por compatibilidad
+    STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", os.getenv("STRIPE_API_KEY"))
+    STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", os.getenv("STRIPE_PUBLIC_KEY"))
+
+    # -------------------- SMTP / Correo --------------------
+    SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER")  # tu correo SMTP
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")  # contraseña o App Password
+    SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Librería Jehová Jiréh")
+    SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"   # STARTTLS (587)
+    SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() == "true"  # SSL directo (465)
+    SMTP_TIMEOUT = int(os.getenv("SMTP_TIMEOUT", "30"))
+
+    # -------------------- reCAPTCHA (opcional) --------------------
+    RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
+    RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
+
+    # -------------------- Enlaces y límites --------------------
+    APP_BASE_URL = os.getenv("APP_BASE_URL", "http://127.0.0.1:5000").rstrip("/")
+    MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(16 * 1024 * 1024)))  # 16MB

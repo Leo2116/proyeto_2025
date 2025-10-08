@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Librería Jehová Jiréh</title>
+
+  <link href="/static/css/style.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/phosphor-icons"></script>
+</head>
+
+<body class="mobile-first-body">
+  <!-- HEADER -->
+  <header class="header-movil">
+    <div class="logo-container">
+      <i class="ph-book-open-text logo-icon"></i>
+      <span class="logo-text">Librería Jehová Jiréh</span>
+    </div>
+    <div class="header-icons">
+      <button id="cart-btn" class="icon-btn" aria-label="Carrito">
+        <i class="ph-shopping-cart"></i>
+        <span id="cart-badge" class="badge hidden">0</span>
+      </button>
+      <!-- SOLO UN BOTÓN DE USUARIO -->
+      <button id="user-btn" class="icon-btn" aria-label="Cuenta" title="Cuenta">
+        <i class="ph-user"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-content">
+      <h1 class="hero-title">Los libros y útiles que necesitas, en un solo lugar.</h1>
+      <p class="hero-sub">Busca por autor, título, género, ISBN… o explora nuestras novedades.</p>
+      <div class="hero-search">
+        <input type="text" id="search-input" placeholder="Buscar libros, autores o útiles…" required />
+        <button id="execute-search-btn" title="Buscar">
+          <i class="ph-magnifying-glass" style="font-size: 1.25rem;"></i>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- (legacy) barra flotante por compatibilidad -->
+  <div id="search-bar" class="search-bar-hidden" aria-hidden="true">
+    <input type="text" id="search-input-legacy" placeholder="Buscar libros, autores o útiles…" />
+    <button id="execute-search-btn-legacy"><i class="ph-arrow-right"></i></button>
+  </div>
+
+  <!-- CONTENIDO -->
+  <main class="main-content">
+    <h2 class="section-heading">Categorías</h2>
+    <section class="categories-grid">
+      <article class="category-card" data-query="biblia" title="Ver Libros">
+        <img src="/static/img/productos/categoria_libros.png" alt="Libros" />
+        <div class="category-label">Libros</div>
+      </article>
+      <article class="category-card" data-query="cuaderno" title="Ver Útiles escolares">
+        <img src="/static/img/productos/categoria_utiles.png" alt="Útiles escolares" />
+        <div class="category-label">Útiles escolares</div>
+      </article>
+    </section>
+
+    <h2 class="section-heading">Novedades y Productos</h2>
+    <section id="product-results" class="product-grid"></section>
+    <p id="status-message" class="status-message hidden"></p>
+  </main>
+
+  <footer class="footer">
+    <p>&copy; 2024 Librería Jehová Jiréh. Todos los derechos reservados.</p>
+  </footer>
+
+  <!-- MODAL ÚNICO: LOGIN / REGISTRO CON PESTAÑAS -->
+  <div id="auth-modal" class="modal hidden">
+    <div class="modal-card" style="max-width:460px;">
+      <button class="modal-close" id="auth-close" title="Cerrar">&times;</button>
+      <div class="tabs" style="display:flex;gap:.5rem;margin-bottom:1rem;">
+        <button id="tab-login"  class="btn-secondary" aria-selected="true">Iniciar sesión</button>
+        <button id="tab-register" class="btn-secondary">Registrarme</button>
+      </div>
+
+      <!-- LOGIN -->
+      <form id="login-form" class="form" autocomplete="on">
+        <label>Email</label>
+        <input type="email" id="login-email" required />
+        <label>Contraseña</label>
+        <input type="password" id="login-password" required />
+        <button type="submit" class="btn-primary" style="width:100%;">Entrar</button>
+        <p id="login-error" class="error hidden" style="margin-top:.5rem;"></p>
+      </form>
+
+      <!-- REGISTRO -->
+      <form id="register-form" class="form hidden" autocomplete="on">
+        <label>Nombre</label>
+        <input type="text" id="register-nombre" required />
+        <label>Email</label>
+        <input type="email" id="register-email" required />
+        <label>Contraseña</label>
+        <input type="password" id="register-password" required />
+        <label>Confirmar contraseña</label>
+        <input type="password" id="register-password2" required />
+        <button type="submit" class="btn-primary" style="width:100%;">Registrarme</button>
+        <p id="register-msg" class="info hidden" style="margin-top:.5rem;"></p>
+        <p id="register-error" class="error hidden" style="margin-top:.5rem;"></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- CARRITO (DRAWER) + BACKDROP -->
+  <aside id="cart-drawer" class="drawer">
+    <div class="drawer-header">
+      <h3>Carrito</h3>
+      <button id="cart-close" class="icon-btn">&times;</button>
+    </div>
+    <div id="cart-items" class="drawer-body"></div>
+    <div class="drawer-footer">
+      <div class="totals">
+        <span>Total:</span> <strong id="cart-total">Q0.00</strong>
+      </div>
+      <div class="drawer-actions">
+        <button id="cart-clear" class="btn-secondary">Vaciar</button>
+        <button class="btn-primary" disabled>Comprar</button>
+      </div>
+    </div>
+  </aside>
+  <div id="drawer-backdrop" class="backdrop hidden"></div>
+
+  <!-- Bridge para legacy IDs -->
+  <script>
+    (function () {
+      const heroInput  = document.getElementById('search-input');
+      const heroBtn    = document.getElementById('execute-search-btn');
+      const legacyIn   = document.getElementById('search-input-legacy');
+      const legacyBtn  = document.getElementById('execute-search-btn-legacy');
+      if (legacyIn) heroInput?.addEventListener('input', () => { legacyIn.value = heroInput.value; });
+      if (legacyBtn) {
+        heroBtn?.addEventListener('click', () => legacyBtn.click());
+        heroInput?.addEventListener('keydown', e => { if (e.key === 'Enter') legacyBtn.click(); });
+      }
+    })();
+  </script>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -7,6 +7,7 @@ from servicios.servicio_catalogo.presentacion.rutas import catalogo_bp
 from servicios.servicio_autenticacion.presentacion.rutas import auth_bp  # <- NUEVO
 from servicios.api_externa.presentacion.rutas_books import books_bp
 from servicios.api_externa.presentacion.rutas_postal import postal_bp
+from servicios.chat.presentacion.rutas_chat import chat_bp
 
 def crear_app():
     app = Flask(
@@ -23,6 +24,7 @@ def crear_app():
     app.register_blueprint(auth_bp)      # <- NUEVO: /api/v1/auth/*
     app.register_blueprint(books_bp)     # <- NUEVO: /api/v1/books
     app.register_blueprint(postal_bp)    # <- NUEVO: /api/v1/postal/<codigo>
+    app.register_blueprint(chat_bp)      # <- NUEVO: /api/v1/chat/recomendar
 
     # ----------------- Carrito -----------------
     def get_cart():

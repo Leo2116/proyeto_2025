@@ -359,4 +359,52 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshUser();
   loadCart();
   loadProducts('');
+
+  // ==========================
+  // Integraciones (helpers)
+  // ==========================
+  async function buscarLibros(q) {
+    const url = `/api/v1/books?q=${encodeURIComponent(q || '')}`;
+    return fetchJSON(url);
+  }
+  async function consultarPostal(codigo) {
+    const url = `/api/v1/postal/${encodeURIComponent(String(codigo || '').trim())}`;
+    const data = await fetchJSON(url);
+    console.log('Postal GT:', data);
+    showStatus(`CP ${data.codigo}: ${data.ciudad || ''}, ${data.estado || ''}`, false);
+    setTimeout(hideStatus, 2500);
+    return data;
+  }
+  async function crearPaymentIntentStripe(total) {
+    const data = await fetchJSON('/api/v1/payments/stripe/create-payment-intent', {
+      method: 'POST',
+      body: JSON.stringify({ total: Number(total) || 0 })
+    });
+    console.log('Stripe clientSecret:', data.clientSecret);
+    return data;
+  }
+  async function crearOrderPayPal(total, currency = 'GTQ') {
+    const data = await fetchJSON('/api/v1/payments/paypal/create-order', {
+      method: 'POST',
+      body: JSON.stringify({ total: Number(total) || 0, currency })
+    });
+    console.log('PayPal order:', data);
+    return data;
+  }
+  async function crearFacturaLocal(items, email) {
+    const payload = { items: Array.isArray(items) ? items : [], email };
+    const data = await fetchJSON('/api/v1/facturas', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    console.log('Factura creada:', data);
+    return data;
+  }
+
+  // Exponer helpers para pruebas desde consola del navegador
+  window.buscarLibros = buscarLibros;
+  window.consultarPostal = consultarPostal;
+  window.crearPaymentIntentStripe = crearPaymentIntentStripe;
+  window.crearOrderPayPal = crearOrderPayPal;
+  window.crearFacturaLocal = crearFacturaLocal;
 });

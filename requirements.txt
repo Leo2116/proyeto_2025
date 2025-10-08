@@ -3,3 +3,4 @@ SQLAlchemy==2.0.29
 requests==2.31.0
 passlib==1.7.4
 python-dotenv==1.0.1
+stripe==10.11.0

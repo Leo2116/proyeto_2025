@@ -37,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const drawerBody  = document.getElementById('cart-items');
   const drawerTotal = document.getElementById('cart-total');
   const drawerClear = document.getElementById('cart-clear');
+  const drawerBuy   = document.getElementById('cart-buy');
   const backdrop    = document.getElementById('drawer-backdrop');
 
   const API_PRODUCTS = '/api/v1/catalogo/productos';
@@ -297,6 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (drawerTotal) drawerTotal.textContent = fmtQ(total);
+    if (drawerBuy) drawerBuy.disabled = items.length === 0;
 
     const count = items.reduce((s, it) => s + (it.cantidad || 0), 0);
     if (cartBadge) {
@@ -331,6 +333,58 @@ document.addEventListener('DOMContentLoaded', () => {
   drawerClear?.addEventListener('click', async () => {
     await fetchJSON('/api/v1/cart/clear', { method: 'POST' });
     loadCart();
+  });
+
+  // Checkout (Stripe/PayPal)
+  async function getCartSnapshot() {
+    try {
+      const cart = await fetchJSON('/api/v1/cart');
+      const arr = Object.values(cart || {});
+      const total = arr.reduce((s, it) => s + (Number(it.precio) || 0) * (it.cantidad || 0), 0);
+      return { items: arr, total };
+    } catch {
+      return { items: [], total: 0 };
+    }
+  }
+
+  drawerBuy?.addEventListener('click', async () => {
+    const { items, total } = await getCartSnapshot();
+    if (!items.length || total <= 0) return;
+
+    // Elección simple sin SDKs: prompt
+    let metodo = (window.prompt('Método de pago: stripe | paypal', 'stripe') || '').trim().toLowerCase();
+    if (metodo !== 'stripe' && metodo !== 'paypal') {
+      showStatus('Método inválido. Usa "stripe" o "paypal".', true);
+      setTimeout(hideStatus, 1800);
+      return;
+    }
+
+    try {
+      showStatus('Procesando pago...', false);
+      if (metodo === 'stripe') {
+        const resp = await crearPaymentIntentStripe(total);
+        if (!resp?.clientSecret) throw new Error('No se obtuvo clientSecret');
+        const email = window.prompt('Email para la factura (opcional)') || undefined;
+        await crearFacturaLocal(items, email);
+        await fetchJSON('/api/v1/cart/clear', { method: 'POST' });
+        await loadCart();
+        showStatus('Stripe OK (simulado). Factura creada. Revisa consola.', false);
+      } else {
+        const resp = await crearOrderPayPal(total, 'GTQ');
+        const approveUrl = resp?.approveUrl;
+        const email = window.prompt('Email para la factura (opcional)') || undefined;
+        await crearFacturaLocal(items, email);
+        await fetchJSON('/api/v1/cart/clear', { method: 'POST' });
+        await loadCart();
+        if (approveUrl) window.open(approveUrl, '_blank');
+        showStatus('PayPal OK (simulado). Factura creada. Revisa consola.', false);
+      }
+      setTimeout(hideStatus, 2500);
+    } catch (err) {
+      console.error('Checkout error:', err);
+      showStatus(err?.message || 'Error en el checkout.', true);
+      setTimeout(hideStatus, 2500);
+    }
   });
 
   // Delegación: click en “Añadir”

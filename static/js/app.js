@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const registerErr  = document.getElementById('register-error');
 
   const userBtn = document.getElementById('user-btn');
+  const adminBtn = document.getElementById('admin-btn');
 
   // Carrito
   const cartBtn     = document.getElementById('cart-btn');
@@ -455,10 +456,21 @@ document.addEventListener('DOMContentLoaded', () => {
     return data;
   }
 
+  async function enviarChatGPT(mensaje, opts = {}) {
+    const body = { mensaje, ...opts };
+    const data = await fetchJSON('/api/v1/ia/chat', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+    console.log('ChatGPT:', data);
+    return data?.respuesta;
+  }
+
   // Exponer helpers para pruebas desde consola del navegador
   window.buscarLibros = buscarLibros;
   window.consultarPostal = consultarPostal;
   window.crearPaymentIntentStripe = crearPaymentIntentStripe;
   window.crearOrderPayPal = crearOrderPayPal;
   window.crearFacturaLocal = crearFacturaLocal;
+  window.enviarChatGPT = enviarChatGPT;
 });

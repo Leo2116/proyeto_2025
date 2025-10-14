@@ -132,6 +132,23 @@
   </div>
 
   <!-- CARRITO (DRAWER) + BACKDROP -->
+  <!-- MODAL PERFIL -->
+  <div id="profile-modal" class="modal hidden">
+    <div class="modal-card" style="max-width:460px;">
+      <button class="modal-close" id="profile-close" title="Cerrar">&times;</button>
+      <h3 style="margin-bottom:.75rem;">Mi Perfil</h3>
+      <div id="profile-content" class="form" style="display:grid; gap:.4rem;">
+        <div><strong>Nombre:</strong> <span id="profile-nombre">-</span></div>
+        <div><strong>Email:</strong> <span id="profile-email">-</span></div>
+        <div><strong>Verificado:</strong> <span id="profile-verificado">-</span></div>
+      </div>
+      <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:1rem;">
+        <button id="profile-logout" class="btn-secondary">Cerrar sesión</button>
+        <button id="profile-ok" class="btn-primary">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <aside id="cart-drawer" class="drawer">
     <div class="drawer-header">
       <h3>Carrito</h3>

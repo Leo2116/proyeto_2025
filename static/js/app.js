@@ -28,6 +28,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const registerErr  = document.getElementById('register-error');
 
   const userBtn = document.getElementById('user-btn');
+  const profileModal = document.getElementById('profile-modal');
+  const profileClose = document.getElementById('profile-close');
+  const profileOk    = document.getElementById('profile-ok');
+  const profileLogout= document.getElementById('profile-logout');
+  const profName     = document.getElementById('profile-nombre');
+  const profEmail    = document.getElementById('profile-email');
+  const profVerif    = document.getElementById('profile-verificado');
   const adminBtn = document.getElementById('admin-btn');
 
   // Carrito
@@ -161,6 +168,14 @@ document.addEventListener('DOMContentLoaded', () => {
   function openAuth()  { authModal?.classList.remove('hidden'); }
   function closeAuth() { authModal?.classList.add('hidden'); }
   authClose?.addEventListener('click', closeAuth);
+  function openProfile() { const m = document.getElementById('profile-modal'); if (m) m.classList.remove('hidden'); }
+  function closeProfile(){ const m = document.getElementById('profile-modal'); if (m) m.classList.add('hidden'); }
+  document.getElementById('profile-close')?.addEventListener('click', closeProfile);
+  document.getElementById('profile-ok')?.addEventListener('click', closeProfile);
+  document.getElementById('profile-logout')?.addEventListener('click', async () => {
+    try { await fetch('/api/v1/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' }); }
+    finally { closeProfile(); location.reload(); }
+  });
   userBtn?.addEventListener('click', openAuth);
 
   function showLoginTab() {
@@ -185,10 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const nombre = me.user.nombre || me.user.email || 'Usuario';
         if (userBtn) {
           userBtn.innerHTML = `<i class="ph-user"></i> <span style="font-size:.9rem;margin-left:.35rem;">${nombre}</span>`;
-          userBtn.onclick = async () => {
-            try { await fetchJSON('/api/v1/auth/logout', { method: 'POST' }); }
-            finally { location.reload(); }
-          };
+          userBtn.onclick = async () => { try { const m = await fetchJSON('/api/v1/auth/me'); const u = (m && m.user) || {}; if (document.getElementById('profile-nombre')) document.getElementById('profile-nombre').textContent = u.nombre || 'Usuario'; if (document.getElementById('profile-email')) document.getElementById('profile-email').textContent = u.email || '-'; if (document.getElementById('profile-verificado')) document.getElementById('profile-verificado').textContent = (u.verificado ? 'Sí' : 'No'); } catch {} const pm = document.getElementById('profile-modal'); if (pm) pm.classList.remove('hidden'); };
         }
       } else {
         if (userBtn) {
@@ -243,10 +255,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             btn.addEventListener('click', async () => {
               btn.disabled = true;
+              const currentEmail = (document.getElementById('login-email')?.value || '').trim();
               try {
                 await fetchJSON('/api/v1/auth/resend-verification', {
                   method: 'POST',
-                  body: JSON.stringify({ email })
+                  body: JSON.stringify({ email: currentEmail })
                 });
                 loginError.textContent = 'Te enviamos un nuevo correo de verificación. Revisa SPAM.';
               } catch (e2) {
@@ -536,6 +549,8 @@ document.addEventListener('DOMContentLoaded', () => {
   window.crearFacturaLocal = crearFacturaLocal;
   window.enviarChatGPT = enviarChatGPT;
 });
+
+
 
 
 

@@ -210,7 +210,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const password = (document.getElementById('login-password')?.value || '');
       if (!email || !password) throw new Error('Ingresa email y contraseña.');
 
-      let recaptcha; try { const ta = loginForm?.querySelector('textarea.g-recaptcha-response'); recaptcha = ta && ta.value ? ta.value : undefined; } catch {}\n      await fetchJSON('/api/v1/auth/login', {\n        method: 'POST',\n        body: JSON.stringify({ email, password, recaptcha })\n      });
+      let recaptcha;
+      try {
+        const ta = loginForm?.querySelector('textarea.g-recaptcha-response');
+        recaptcha = ta && ta.value ? ta.value : undefined;
+      } catch {}
+
+      await fetchJSON('/api/v1/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password, recaptcha })
+      });
       closeAuth();
       refreshUser();
     } catch (err) {
@@ -242,6 +251,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
+      let recaptcha;
+      try {
+        const ta = registerForm?.querySelector('textarea.g-recaptcha-response');
+        recaptcha = ta && ta.value ? ta.value : undefined;
+      } catch {}
       const resp = await fetchJSON('/api/v1/auth/register', {
         method: 'POST',
         body: JSON.stringify({ nombre, email, password: p1, recaptcha })
@@ -491,4 +505,6 @@ document.addEventListener('DOMContentLoaded', () => {
   window.crearFacturaLocal = crearFacturaLocal;
   window.enviarChatGPT = enviarChatGPT;
 });
+
+
 

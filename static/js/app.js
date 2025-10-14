@@ -210,10 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const password = (document.getElementById('login-password')?.value || '');
       if (!email || !password) throw new Error('Ingresa email y contraseña.');
 
-      await fetchJSON('/api/v1/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password })
-      });
+      let recaptcha; try { const ta = loginForm?.querySelector('textarea.g-recaptcha-response'); recaptcha = ta && ta.value ? ta.value : undefined; } catch {}\n      await fetchJSON('/api/v1/auth/login', {\n        method: 'POST',\n        body: JSON.stringify({ email, password, recaptcha })\n      });
       closeAuth();
       refreshUser();
     } catch (err) {
@@ -247,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const resp = await fetchJSON('/api/v1/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ nombre, email, password: p1 })
+        body: JSON.stringify({ nombre, email, password: p1, recaptcha })
       });
       if (resp?.ok || resp?.mensaje) {
         if (registerMsg) { registerMsg.textContent = '¡Registro exitoso! Revisa tu correo para verificar la cuenta.'; registerMsg.classList.remove('hidden'); }
@@ -474,3 +471,4 @@ document.addEventListener('DOMContentLoaded', () => {
   window.crearFacturaLocal = crearFacturaLocal;
   window.enviarChatGPT = enviarChatGPT;
 });
+

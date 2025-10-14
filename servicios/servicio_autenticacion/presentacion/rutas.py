@@ -1,6 +1,8 @@
 # servicios/servicio_autenticacion/presentacion/rutas.py
 
 from flask import Blueprint, request, jsonify, session
+import os
+import requests
 
 # Importamos las clases de Caso de Uso
 # Asumimos que generarás estos archivos pronto para que esto funcione
@@ -45,13 +47,32 @@ iniciar_sesion_uc = IniciarSesion(
 def _registrar_impl():
     """Ruta para registrar un nuevo usuario."""
     data = request.get_json()
-    
+
     nombre = data.get('nombre')
     email = data.get('email')
     password = data.get('password')
+    # reCAPTCHA v2 (si está configurado)
+    recaptcha_token = data.get('recaptcha') or data.get('g_recaptcha_response') or data.get('g-recaptcha-response')
+    secret = os.getenv('RECAPTCHA_SECRET_KEY') or getattr(Config, 'RECAPTCHA_SECRET_KEY', None)
 
     if not all([nombre, email, password]):
         return jsonify({"error": "Faltan campos requeridos (nombre, email, password)."}), 400
+
+    # Validación reCAPTCHA si hay SECRET configurado
+    if secret:
+        if not recaptcha_token:
+            return jsonify({"error": "Falta verificación reCAPTCHA."}), 400
+        try:
+            r = requests.post(
+                'https://www.google.com/recaptcha/api/siteverify',
+                data={'secret': secret, 'response': recaptcha_token},
+                timeout=10
+            )
+            ok = (r.json() or {}).get('success', False)
+            if not ok:
+                return jsonify({"error": "reCAPTCHA inválido."}), 400
+        except Exception:
+            return jsonify({"error": "No se pudo verificar reCAPTCHA."}), 502
 
     try:
         # 1) Crear usuario
@@ -97,9 +118,28 @@ def login():
     
     email = data.get('email')
     password = data.get('password')
+    # reCAPTCHA v2 (si está configurado)
+    recaptcha_token = data.get('recaptcha') or data.get('g_recaptcha_response') or data.get('g-recaptcha-response')
+    secret = os.getenv('RECAPTCHA_SECRET_KEY') or getattr(Config, 'RECAPTCHA_SECRET_KEY', None)
 
     if not all([email, password]):
         return jsonify({"error": "Faltan campos requeridos (email, password)."}), 400
+
+    # Validación reCAPTCHA si hay SECRET configurado
+    if secret:
+        if not recaptcha_token:
+            return jsonify({"error": "Falta verificación reCAPTCHA."}), 400
+        try:
+            r = requests.post(
+                'https://www.google.com/recaptcha/api/siteverify',
+                data={'secret': secret, 'response': recaptcha_token},
+                timeout=10
+            )
+            ok = (r.json() or {}).get('success', False)
+            if not ok:
+                return jsonify({"error": "reCAPTCHA inválido."}), 400
+        except Exception:
+            return jsonify({"error": "No se pudo verificar reCAPTCHA."}), 502
 
     try:
         # 1) Verificar credenciales

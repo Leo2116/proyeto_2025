@@ -8,6 +8,9 @@
   <link href="/static/css/style.css" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/phosphor-icons"></script>
+  {% if config.RECAPTCHA_SITE_KEY %}
+  <script src="https://www.google.com/recaptcha/api.js?hl=es" async defer></script>
+  {% endif %}
   <script>
     // Inicializar tema lo antes posible para evitar parpadeo
     try {
@@ -101,6 +104,9 @@
         <input type="email" id="login-email" required />
         <label>Contraseña</label>
         <input type="password" id="login-password" required />
+        {% if config.RECAPTCHA_SITE_KEY %}
+        <div class="g-recaptcha" data-sitekey="{{ config.RECAPTCHA_SITE_KEY }}" style="margin:.5rem 0;"></div>
+        {% endif %}
         <button type="submit" class="btn-primary" style="width:100%;">Entrar</button>
         <p id="login-error" class="error hidden" style="margin-top:.5rem;"></p>
       </form>
@@ -115,6 +121,9 @@
         <input type="password" id="register-password" required />
         <label>Confirmar contraseña</label>
         <input type="password" id="register-password2" required />
+        {% if config.RECAPTCHA_SITE_KEY %}
+        <div class="g-recaptcha" data-sitekey="{{ config.RECAPTCHA_SITE_KEY }}" style="margin:.5rem 0;"></div>
+        {% endif %}
         <button type="submit" class="btn-primary" style="width:100%;">Registrarme</button>
         <p id="register-msg" class="info hidden" style="margin-top:.5rem;"></p>
         <p id="register-error" class="error hidden" style="margin-top:.5rem;"></p>

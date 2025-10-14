@@ -349,6 +349,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const { items, total } = await getCartSnapshot();
     if (!items.length || total <= 0) return;
 
+    // Requiere login: si no autenticado, abrir modal de auth
+    try {
+      const me = await fetchJSON('/api/v1/auth/me');
+      if (!me?.authenticated) {
+        try { closeCart(); } catch {}
+        if (typeof openAuth === 'function') { openAuth(); }
+        else {
+          // fallback: mostrar mensaje
+          showStatus('Inicia sesión para continuar con la compra.', true);
+          setTimeout(hideStatus, 2000);
+        }
+        return;
+      }
+    } catch (e) {
+      // si no podemos verificar, pedimos login por seguridad
+      try { closeCart(); } catch {}
+      if (typeof openAuth === 'function') { openAuth(); }
+      return;
+    }
+
     // Elección simple sin SDKs: prompt
     let metodo = (window.prompt('Método de pago: stripe | paypal', 'stripe') || '').trim().toLowerCase();
     if (metodo !== 'stripe' && metodo !== 'paypal') {

@@ -26,6 +26,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+.hidden { display: none !important; }
 
 body {
   background-color: var(--bg-color);
@@ -34,6 +35,11 @@ body {
   padding-top: 60px; /* espacio para el header fijo */
   transition: background-color .2s ease, color .2s ease;
 }
+
+/* Modal genérico (auth) */
+.modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.45); z-index: 1300; }
+.modal.hidden { display: none !important; }
+.modal-card { background: var(--card-bg); color: var(--text-color); border-radius: 12px; padding: 1rem; box-shadow: 0 18px 40px rgba(0,0,0,.25); width: min(520px, 92%); }
 
 /* ===================================================================
    1. HEADER MOVIL (Mobile First)

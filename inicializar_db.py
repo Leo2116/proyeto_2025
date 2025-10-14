@@ -191,23 +191,7 @@ def inicializar_base_datos():
             session.commit()
             print("Datos de logística insertados.")
 
-        # 3) Producto de ejemplo (no obligatorio; sólo si no existe)
-        if session.query(ProductoORM).filter_by(id_producto="UTIL001").count() == 0:
-            util = ProductoORM(
-                id_producto="UTIL001",
-                nombre="Cuaderno Espiral Universitario",
-                precio=15.50,
-                stock=500,
-                # Ajusta la ruta si tu imagen está en /static/img/productos/cuaderno.png
-                imagen_url="/static/img/productos/cuaderno.png",
-                tipo=TipoProductoEnum.UTIL,
-                material="Papel Bond 80g",
-                categoria="Cuaderno",
-            )
-            session.add(util)
-            session.commit()
-            print("Producto de ejemplo insertado (UTIL001).")
-
+        
     except SQLAlchemyError as e:
         print(f"Error durante la inicialización de la base de datos: {e}")
         session.rollback()

@@ -1,24 +1,41 @@
 from __future__ import annotations
 
-from typing import List, Dict
+from typing import List, Dict, Any
+import unicodedata
+
+
+def _norm(s: Any) -> str:
+    txt = (str(s or ""))
+    txt = unicodedata.normalize("NFD", txt)
+    txt = "".join(ch for ch in txt if unicodedata.category(ch) != "Mn")
+    return txt.lower().strip()
 
 
 KEYWORDS = {
-    "biblia": ["biblia", "santa biblia"],
-    "cuaderno": ["cuaderno", "libreta"],
-    "mochila": ["mochila", "backpack"],
-    "matematicas": ["matemáticas", "matematica", "matemáticas", "álgebra", "geometría"],
-    "lapiz": ["lapiz", "lápiz"],
-    "pluma": ["pluma", "bolígrafo", "boligrafo"],
+    "biblia": ["biblia", "santa biblia", "testamento"],
+    "cuaderno": ["cuaderno", "libreta", "libretas"],
+    "mochila": ["mochila", "mochilas", "backpack"],
+    "matematicas": ["matematicas", "matematica", "algebra", "geometria"],
+    "lapiz": ["lapiz", "lapices", "lapicero", "lapiceros", "portaminas"],
+    "pluma": ["pluma", "boligrafo", "boligrafos"],
+    "borrador": ["borrador", "goma"],
+    "regla": ["regla", "escuadra", "transportador"],
+    "resaltador": ["resaltador", "resaltadores", "marcador", "marcadores"],
 }
 
 
-def recomendar(texto: str, productos: List) -> List[Dict]:
+def _get(p: Any, key: str) -> Any:
+    if isinstance(p, dict):
+        return p.get(key)
+    return getattr(p, key, None)
+
+
+def recomendar(texto: str, productos: List[Any]) -> List[Dict]:
     """
-    Recomendación simple por coincidencia de palabras clave.
-    Devuelve hasta 5 sugerencias {id, nombre, precio, portada_url}.
+    Recomendacion por palabras clave y tokens (acento-insensible).
+    Soporta objetos o dicts. Devuelve hasta 8 sugerencias.
     """
-    t = (texto or "").lower()
+    t = _norm(texto)
     if not t:
         candidatos = productos
     else:
@@ -26,24 +43,28 @@ def recomendar(texto: str, productos: List) -> List[Dict]:
         keys = [k for k, syns in KEYWORDS.items() if any(s in t for s in syns)]
 
         def matches(p):
-            nombre = (getattr(p, "nombre", "") or "").lower()
-            categoria = (getattr(p, "categoria", "") or "").lower()
-            # Coincide si alguna keyword aparece en nombre o categoria
+            nombre = _norm(_get(p, "nombre"))
+            categoria = _norm(_get(p, "categoria") or _get(p, "tipo"))
+            autor = _norm(_get(p, "autor"))
+            sku = _norm(_get(p, "sku") or _get(p, "isbn"))
+            hay = " ".join(filter(None, [nombre, categoria, autor, sku]))
             return (
-                any(k in nombre for k in keys)
-                or any(k in categoria for k in keys)
-                or any(tok in nombre for tok in tokens)
+                any(k in hay for k in keys)
+                or all(tok in hay for tok in tokens)
             )
 
-        candidatos = [p for p in productos if matches(p)] or productos
+        candidatos = [p for p in (productos or []) if matches(p)] or productos
 
-    sugerencias = []
-    for p in candidatos[:5]:
+    sugerencias: List[Dict] = []
+    for p in (candidatos or [])[:8]:
+        pid = _get(p, "id_producto") or _get(p, "id") or _get(p, "isbn") or _norm(_get(p, "nombre")).replace(" ", "_") or None
+        nombre = _get(p, "nombre") or "Producto"
+        precio = float(_get(p, "precio") or 0)
+        portada = _get(p, "imagen_url") or _get(p, "portada_url")
         sugerencias.append({
-            "id": getattr(p, "id_producto", None) or getattr(p, "id", None) or getattr(p, "isbn", None) or getattr(p, "nombre", "").lower().replace(" ", "_"),
-            "nombre": getattr(p, "nombre", "Producto"),
-            "precio": float(getattr(p, "precio", 0) or 0),
-            "portada_url": getattr(p, "imagen_url", None) or getattr(p, "portada_url", None),
+            "id": pid or nombre.lower().replace(" ", "_"),
+            "nombre": nombre,
+            "precio": precio,
+            "portada_url": portada,
         })
     return sugerencias
-

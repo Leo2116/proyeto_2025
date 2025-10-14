@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin | Librería</title>
+  <link href="/static/css/style.css" rel="stylesheet" />
+  <style>
+    .admin-wrap { width: min(1100px, 96%); margin: 1rem auto; display: grid; gap: 1rem; }
+    .admin-card { background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem; box-shadow: var(--shadow); }
+    .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .admin-grid label { font-weight: 600; font-size: .95rem; }
+    .admin-grid input, .admin-grid select, .admin-grid textarea { width: 100%; padding: .55rem .7rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg); color: var(--text-color); }
+    .admin-actions { display: flex; gap: .5rem; justify-content: flex-end; }
+    .table { width: 100%; border-collapse: collapse; }
+    .table th, .table td { border-bottom: 1px solid var(--border-color); padding: .5rem .6rem; text-align: left; }
+    .muted { color: #6b7280; }
+    .row-actions { display:flex; gap:.35rem; }
+    .pill { font-size: .8rem; padding: .1rem .4rem; border-radius: 999px; background: var(--secondary-bg);}
+  </style>
+</head>
+<body>
+  <div class="admin-wrap">
+    <h1>Administración de productos</h1>
+
+    <section class="admin-card">
+      <h2 style="margin-bottom:.5rem;">Nuevo / Editar producto</h2>
+      <div class="admin-grid">
+        <div>
+          <label>ID (opcional)</label>
+          <input id="p-id" type="text" placeholder="si se omite se genera desde el nombre" />
+        </div>
+        <div>
+          <label>Nombre</label>
+          <input id="p-nombre" type="text" required />
+        </div>
+        <div>
+          <label>Precio</label>
+          <input id="p-precio" type="number" step="0.01" min="0" required />
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select id="p-tipo">
+            <option>Producto</option>
+            <option>Libro</option>
+            <option>UtilEscolar</option>
+          </select>
+        </div>
+        <div>
+          <label>Autor (Libro) / Marca (Útil)</label>
+          <input id="p-autor-marca" type="text" />
+        </div>
+        <div>
+          <label>ISBN (Libro) / SKU (Útil)</label>
+          <input id="p-isbn-sku" type="text" />
+        </div>
+        <div style="grid-column: 1 / -1;">
+          <label>Sinopsis (opcional)</label>
+          <textarea id="p-sinopsis" rows="3"></textarea>
+        </div>
+        <div style="grid-column: 1 / -1;">
+          <label>URL de portada (opcional)</label>
+          <input id="p-portada" type="text" placeholder="/static/img/productos/mi_imagen.png" />
+        </div>
+      </div>
+      <div class="admin-actions" style="margin-top:.75rem;">
+        <button id="btn-guardar" class="btn-primary">Guardar</button>
+        <button id="btn-limpiar" class="btn-secondary">Limpiar</button>
+      </div>
+      <p id="admin-msg" class="muted" style="margin-top:.5rem;"></p>
+    </section>
+
+    <section class="admin-card">
+      <h2 style="margin-bottom:.5rem;">Productos</h2>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nombre</th>
+            <th>Tipo</th>
+            <th>Precio</th>
+            <th>Extra</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="admin-tbody"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <script>
+    async function fetchJSON(url, opts={}){
+      const res = await fetch(url, { headers:{'Content-Type':'application/json'}, credentials:'same-origin', ...opts });
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(data.error || ('Error '+res.status));
+      return data;
+    }
+
+    function byId(id){ return document.getElementById(id); }
+    const $ = byId;
+    const tid = 'admin-tbody';
+
+    function setMsg(t){ const m = $('admin-msg'); if(m){ m.textContent = t || ''; } }
+    function limpiar(){ ['p-id','p-nombre','p-precio','p-autor-marca','p-isbn-sku','p-sinopsis','p-portada'].forEach(id=>{ const el=$(id); if(el) el.value=''; }); $('p-tipo').value='Producto'; }
+    function fillForm(row){ $('p-id').value=row.id||''; $('p-nombre').value=row.nombre||''; $('p-precio').value=row.precio||0; $('p-tipo').value=row.tipo||'Producto'; $('p-autor-marca').value=row.autor_marca||''; $('p-isbn-sku').value=row.isbn_sku||''; $('p-sinopsis').value=row.sinopsis||''; $('p-portada').value=row.portada_url||''; }
+
+    function rowHTML(r){
+      const extra = (r.tipo==='Libro' ? (r.autor_marca||'-')+' · '+(r.isbn_sku||'-') : r.tipo==='UtilEscolar' ? (r.autor_marca||'-')+' · '+(r.isbn_sku||'-') : '-');
+      return (
+        '<tr data-id="'+(r.id||'')+'">'
+        + '<td>'+ (r.id||'') +'</td>'
+        + '<td>'+ (r.nombre||'') +'</td>'
+        + '<td><span class="pill">'+ (r.tipo||'') +'</span></td>'
+        + '<td>Q'+ Number(r.precio||0).toFixed(2) +'</td>'
+        + '<td>'+ extra +'</td>'
+        + '<td class="row-actions">'
+        +   '<button class="btn-secondary btn-edit">Editar</button>'
+        +   '<button class="btn-secondary btn-delete">Eliminar</button>'
+        + '</td>'
+        + '</tr>'
+      );
+    }
+
+    async function cargarTabla(){
+      try{
+        const data = await fetchJSON('/api/v1/admin/productos');
+        const tb = $(tid); if(!tb) return;
+        tb.innerHTML = (data||[]).map(rowHTML).join('') || '<tr><td colspan="6" class="muted">Sin productos</td></tr>';
+        tb.querySelectorAll('.btn-edit').forEach(btn=> btn.onclick = ()=>{ const tr=btn.closest('tr'); const id=tr?.getAttribute('data-id'); const row = (data||[]).find(x=>x.id===id); if(row) fillForm(row); window.scrollTo({top:0,behavior:'smooth'}); });
+        tb.querySelectorAll('.btn-delete').forEach(btn=> btn.onclick = async ()=>{ const tr=btn.closest('tr'); const id=tr?.getAttribute('data-id'); if(!id) return; if(!confirm('¿Eliminar '+id+'?')) return; try{ await fetchJSON('/api/v1/admin/productos/'+encodeURIComponent(id), { method:'DELETE' }); setMsg('Eliminado'); cargarTabla(); }catch(e){ setMsg(e.message); } });
+      }catch(e){ setMsg(e.message); }
+    }
+
+    $('btn-limpiar').onclick = ()=> limpiar();
+    $('btn-guardar').onclick = async ()=>{
+      setMsg('');
+      const payload = {
+        id: $('p-id').value.trim() || undefined,
+        nombre: $('p-nombre').value.trim(),
+        precio: parseFloat($('p-precio').value || '0'),
+        tipo: $('p-tipo').value,
+        autor_marca: $('p-autor-marca').value.trim() || undefined,
+        isbn_sku: $('p-isbn-sku').value.trim() || undefined,
+        sinopsis: $('p-sinopsis').value || undefined,
+        portada_url: $('p-portada').value || undefined,
+      };
+      try{
+        if(payload.id){
+          await fetchJSON('/api/v1/admin/productos/'+encodeURIComponent(payload.id), { method:'PUT', body: JSON.stringify(payload) });
+          setMsg('Actualizado');
+        } else {
+          await fetchJSON('/api/v1/admin/productos', { method:'POST', body: JSON.stringify(payload) });
+          setMsg('Creado');
+        }
+        limpiar();
+        cargarTabla();
+      }catch(e){ setMsg(e.message); }
+    };
+
+    // init
+    (async function(){
+      try {
+        const { admin } = await fetchJSON('/api/v1/admin/check');
+        if(!admin){ setMsg('No autorizado'); return; }
+        cargarTabla();
+      } catch(e){ setMsg(e.message); }
+    })();
+  </script>
+</body>
+</html>
+

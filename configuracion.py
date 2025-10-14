@@ -58,3 +58,7 @@ class Config:
     # -------------------- Enlaces y límites --------------------
     APP_BASE_URL = os.getenv("APP_BASE_URL", "http://127.0.0.1:5000").rstrip("/")
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(16 * 1024 * 1024)))  # 16MB
+
+    # -------------------- Administración --------------------
+    # Emails con acceso de administrador (separados por coma)
+    ADMIN_EMAILS = [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", os.getenv("ADMIN_EMAIL", "")).split(",") if e.strip()]

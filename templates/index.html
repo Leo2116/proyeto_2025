@@ -8,6 +8,14 @@
   <link href="/static/css/style.css" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/phosphor-icons"></script>
+  <script>
+    // Inicializar tema lo antes posible para evitar parpadeo
+    try {
+      const t = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', t || (prefersDark ? 'dark' : 'light'));
+    } catch (e) {}
+  </script>
 </head>
 
 <body class="mobile-first-body">
@@ -18,6 +26,12 @@
       <span class="logo-text">Librería Jehová Jiréh</span>
     </div>
     <div class="header-icons">
+      <button id="admin-btn" class="icon-btn hidden" aria-label="Admin" title="Administrar">
+        <i class="ph-shield-check"></i>
+      </button>
+      <button id="theme-btn" class="icon-btn" aria-label="Tema" title="Cambiar tema">
+        <i class="ph-moon"></i>
+      </button>
       <button id="cart-btn" class="icon-btn" aria-label="Carrito">
         <i class="ph-shopping-cart"></i>
         <span id="cart-badge" class="badge hidden">0</span>
@@ -127,6 +141,33 @@
   </aside>
   <div id="drawer-backdrop" class="backdrop hidden"></div>
 
+  <!-- ASISTENTE VIRTUAL -->
+  <div id="assistant-widget" class="assistant-widget">
+    <button id="assistant-toggle" class="assistant-toggle" aria-label="Asistente" title="Asistente">
+      <i class="ph-chat-circle-text"></i>
+    </button>
+    <div id="assistant-panel" class="assistant-panel hidden">
+      <div class="assistant-header">
+        <div class="assistant-info">
+          <div class="avatar"><i class="ph-robot"></i><span class="status-dot"></span></div>
+          <div class="title-wrap">
+            <div class="title">Asistente de la Librería</div>
+            <div class="subtitle">En línea</div>
+          </div>
+        </div>
+        <button id="assistant-close" class="icon-btn" title="Cerrar" aria-label="Cerrar">&times;</button>
+      </div>
+      <div id="assistant-messages" class="assistant-messages">
+        <div class="assistant-tip">Escríbeme lo que buscas: “cuadernos”, “biblia”, “lápiz”…</div>
+      </div>
+      <form id="assistant-form" class="assistant-form" autocomplete="off">
+        <input id="assistant-input" type="text" placeholder="¿Qué necesitas hoy?" required />
+        <button type="submit" title="Enviar"><i class="ph-paper-plane-right"></i></button>
+      </form>
+    </div>
+  </div>
+  <div id="assistant-backdrop" class="assistant-backdrop hidden"></div>
+
   <!-- Dev helpers (ocultos por defecto)
   <div id="dev-helpers" style="display:none">
     <button onclick="buscarLibros('python').then(console.log)">Test Books</button>
@@ -149,9 +190,308 @@
         heroBtn?.addEventListener('click', () => legacyBtn.click());
         heroInput?.addEventListener('keydown', e => { if (e.key === 'Enter') legacyBtn.click(); });
       }
+      // Mostrar botón Admin si aplica
+      const adminBtn = document.getElementById('admin-btn');
+      if (adminBtn) {
+        fetch('/api/v1/admin/check', { credentials: 'same-origin' })
+          .then(r => r.json()).then(d => { if (d && d.admin) adminBtn.classList.remove('hidden'); })
+          .catch(() => {});
+        adminBtn.addEventListener('click', () => { window.location.href = '/admin'; });
+      }
+    })();
+  </script>
+
+  <script>
+    // Toggle de tema (claro/oscuro) con persistencia
+    document.addEventListener('DOMContentLoaded', function () {
+      const btn = document.getElementById('theme-btn');
+      if (!btn) return;
+      function setTheme(t) {
+        const theme = t === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        try { localStorage.setItem('theme', theme); } catch (e) {}
+        btn.innerHTML = theme === 'dark' ? '<i class="ph-sun"></i>' : '<i class="ph-moon"></i>';
+        btn.title = theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
+        btn.setAttribute('aria-label', btn.title);
+      }
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      setTheme(current);
+      btn.addEventListener('click', function () {
+        const cur = document.documentElement.getAttribute('data-theme') || 'light';
+        setTheme(cur === 'dark' ? 'light' : 'dark');
+      });
+    });
+  </script>
+
+  <script>
+    // Búsqueda con filtrado local sin acentos (override ligero)
+    (function () {
+      const API_PRODUCTS = '/api/v1/catalogo/productos';
+      const statusMessage = document.getElementById('status-message');
+      const productBox = document.getElementById('product-results');
+      const heroInput  = document.getElementById('search-input');
+      const heroBtn    = document.getElementById('execute-search-btn');
+
+      const fmtQ = (n) => `Q${(Number(n) || 0).toFixed(2)}`;
+      const normalize = (s) => (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const showStatus = (msg, isError=false) => {
+        if (!statusMessage) return;
+        statusMessage.textContent = msg;
+        statusMessage.classList.remove('hidden');
+        statusMessage.style.backgroundColor = isError ? '#f8d7da' : '#d4edda';
+        statusMessage.style.color = isError ? '#721c24' : '#155724';
+      };
+      const hideStatus = () => statusMessage && statusMessage.classList.add('hidden');
+
+      function normalizeProduct(p) {
+        const id = p.id || p.id_producto || p.sku || p.isbn || (p.nombre ? p.nombre.toLowerCase().replace(/\s+/g,'_') : Math.random().toString(36).slice(2));
+        const nombre = p.nombre || p.titulo || 'Producto';
+        const precio = Number(p.precio || p.price || 0);
+        const tipo   = p.tipo || (p.isbn ? 'Libro' : 'UtilEscolar');
+        const img    = p.portada_url || p.imagen_url || `/static/img/productos/${id}.png`;
+        return { id, nombre, precio, tipo, portada_url: img };
+      }
+
+      function productCardHTML(prod) {
+        const { id, nombre, precio, tipo, portada_url } = prod;
+        const safeAlt = (nombre || '').replace(/\"/g, '&quot;');
+        return (
+          `\n      <article class="product-card" data-id="${id}">\n`+
+          `        <img src="${portada_url}" alt="${safeAlt}" class="product-img"\n`+
+          `             onerror="this.onerror=null;this.src='https://placehold.co/280x200?text=${encodeURIComponent(tipo)}';">\n`+
+          `        <div class="product-info">\n`+
+          `          <span class="product-type">${tipo}</span>\n`+
+          `          <h2 class="product-name">${nombre}</h2>\n`+
+          `          <p class="product-price">${fmtQ(precio)}</p>\n`+
+          `          <button class="add-to-cart-btn"><i class="ph-plus"></i> Añadir</button>\n`+
+          `        </div>\n`+
+          `      </article>\n`
+        );
+      }
+
+      async function fetchJSON(url) {
+        const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+        return data;
+      }
+
+      async function searchAll(query) {
+        if (productBox) productBox.innerHTML = '';
+        const q = (query || '').trim();
+        showStatus(q ? `Buscando "${q}".` : 'Cargando productos.');
+        try {
+          const data = await fetchJSON(API_PRODUCTS);
+          hideStatus();
+          const tokens = normalize(q).split(/\s+/).filter(Boolean);
+          const filtered = (!tokens.length ? data : (data || []).filter((it) => {
+            const hay = [it.nombre, it.titulo, it.tipo, it.autor, it.marca, it.isbn, it.sku].map(normalize).join(' ');
+            return tokens.every(t => hay.includes(t));
+          }));
+          const normalized = (filtered || []).map(normalizeProduct);
+          if (!normalized.length) {
+            showStatus(q ? `No se encontraron productos para "${q}".` : 'No hay productos para mostrar.', true);
+            return;
+          }
+          if (productBox) productBox.innerHTML = normalized.map(productCardHTML).join('');
+        } catch (err) {
+          showStatus(`Error al cargar productos: ${err.message}`, true);
+        }
+      }
+
+      function attachOverrides() {
+        if (heroBtn) {
+          heroBtn.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopImmediatePropagation();
+            searchAll(heroInput && heroInput.value);
+          }, true);
+        }
+        if (heroInput) {
+          heroInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+              e.preventDefault(); e.stopImmediatePropagation();
+              searchAll(heroInput.value);
+            }
+          }, true);
+        }
+
+        // Interceptar clicks en categorías antes que app.js
+        document.addEventListener('click', function (e) {
+          const card = e.target.closest && e.target.closest('.category-card');
+          if (!card) return;
+          e.preventDefault(); e.stopImmediatePropagation();
+          const q = card.getAttribute('data-query') || '';
+          searchAll(q);
+          document.getElementById('product-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, true);
+      }
+
+      attachOverrides();
     })();
   </script>
 
   <script src="/static/js/app.js"></script>
+  <script>
+    // Lógica del asistente virtual (UI + llamadas a /api/v1/chat/recomendar)
+    (function () {
+      const toggleBtn = document.getElementById('assistant-toggle');
+      const panel     = document.getElementById('assistant-panel');
+      const closeBtn  = document.getElementById('assistant-close');
+      const form      = document.getElementById('assistant-form');
+      const input     = document.getElementById('assistant-input');
+      const messages  = document.getElementById('assistant-messages');
+      const aback     = document.getElementById('assistant-backdrop');
+
+      function showPanel() {
+        panel?.classList.remove('hidden');
+        aback?.classList.remove('hidden');
+        setTimeout(()=>input?.focus(), 50);
+      }
+      function hidePanel() {
+        panel?.classList.add('hidden');
+        aback?.classList.add('hidden');
+      }
+      toggleBtn?.addEventListener('click', showPanel);
+      closeBtn?.addEventListener('click', hidePanel);
+      aback?.addEventListener('click', hidePanel);
+
+      async function fetchJSON(url, opts={}) {
+        const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', ...opts });
+        const data = await res.json().catch(()=>({}));
+        if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+        return data;
+      }
+
+      function suggestionItemHTML(s) {
+        const img = s.portada_url || '/static/img/productos/categoria_libros.png';
+        const name = s.nombre || 'Producto';
+        const price = Number(s.precio || 0).toFixed(2);
+        const id = s.id || (name.toLowerCase().replace(/\s+/g,'_'));
+        return `
+          <div class="assistant-suggestion" data-id="${id}" data-nombre="${name}" data-precio="${price}" data-img="${img}">
+            <img src="${img}" alt="${name.replace(/\"/g,'&quot;')}">
+            <div class="info">
+              <div class="name">${name}</div>
+              <div class="price">Q${price}</div>
+            </div>
+            <button class="assistant-add" title="Añadir al carrito"><i class="ph-plus"></i></button>
+          </div>
+        `;
+      }
+
+      async function addToCartFromSuggestion(el) {
+        const id = el.getAttribute('data-id');
+        const nombre = el.getAttribute('data-nombre');
+        const precio = parseFloat(el.getAttribute('data-precio') || '0');
+        const portada_url = el.getAttribute('data-img');
+        try {
+          await fetchJSON('/api/v1/cart/add', { method: 'POST', body: JSON.stringify({ id, nombre, precio, portada_url, cantidad: 1 }) });
+          // Feedback ligero
+          el.classList.add('added');
+          setTimeout(()=> el.classList.remove('added'), 600);
+          // Actualizar badge del carrito
+          try {
+            const res = await fetch('/api/v1/cart', { credentials: 'same-origin' });
+            const cart = await res.json();
+            const items = Object.values(cart || {});
+            const count = items.reduce((s, it) => s + (it.cantidad || 0), 0);
+            const badge = document.getElementById('cart-badge');
+            if (badge) {
+              if (count > 0) { badge.textContent = String(count); badge.classList.remove('hidden'); }
+              else { badge.classList.add('hidden'); }
+            }
+          } catch {}
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      messages?.addEventListener('click', (e) => {
+        const addBtn = e.target.closest && e.target.closest('.assistant-add');
+        if (!addBtn) return;
+        const item = addBtn.closest('.assistant-suggestion');
+        if (item) addToCartFromSuggestion(item);
+      });
+
+      form?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const q = (input?.value || '').trim();
+        if (!q) return;
+        messages.innerHTML = `<div class="assistant-user">${q}</div><div class="assistant-loading">Buscando recomendaciones...</div>`;
+        try {
+          const resp = await fetchJSON('/api/v1/chat/recomendar', { method: 'POST', body: JSON.stringify({ mensaje: q }) });
+          const list = Array.isArray(resp) ? resp : [];
+          if (!list.length) {
+            messages.innerHTML = `<div class="assistant-tip">No encontré recomendaciones. Intenta otra palabra.</div>`;
+            return;
+          }
+          messages.innerHTML = `<div class="assistant-bot">Esto te puede interesar:</div>` + list.map(suggestionItemHTML).join('');
+        } catch (err) {
+          messages.innerHTML = `<div class="assistant-error">No pude recomendar ahora. Intenta más tarde.</div>`;
+        }
+      });
+    })();
+  </script>
+  <script>
+    // Override del submit del asistente: estilo Messenger (conversación mantenida)
+    (function(){
+      const form = document.getElementById('assistant-form');
+      const input = document.getElementById('assistant-input');
+      const messages = document.getElementById('assistant-messages');
+      function suggestionItemHTML(s) {
+        const img = s.portada_url || '/static/img/productos/categoria_libros.png';
+        const name = s.nombre || 'Producto';
+        const price = Number(s.precio || 0).toFixed(2);
+        const id = s.id || (name.toLowerCase().replace(/\s+/g,'_'));
+        return (
+          '<div class="assistant-suggestion" data-id="'+id+'" data-nombre="'+name+'" data-precio="'+price+'" data-img="'+img+'">'
+          + '<img src="'+img+'" alt="'+name.replace(/\"/g,'&quot;')+'">'
+          + '<div class="info">'
+          +   '<div class="name">'+name+'</div>'
+          +   '<div class="price">Q'+price+'</div>'
+          + '</div>'
+          + '<button class="assistant-add" title="Añadir al carrito"><i class="ph-plus"></i></button>'
+          + '</div>'
+        );
+      }
+      function appendUser(text){ if(!messages) return; const d=document.createElement('div'); d.className='assistant-user'; d.textContent=text; messages.appendChild(d); scrollDown(); }
+      function appendBot(text){ if(!messages) return; if(!text) return; const d=document.createElement('div'); d.className='assistant-bot'; d.textContent=text; messages.appendChild(d); scrollDown(); }
+      function appendSuggestions(list){ if(!messages) return; if(!Array.isArray(list) || !list.length) return; const wrap=document.createElement('div'); wrap.innerHTML = list.map(suggestionItemHTML).join(''); messages.appendChild(wrap); scrollDown(); }
+      function showTyping(){ if(!messages) return null; const t=document.createElement('div'); t.className='assistant-typing'; t.innerHTML='<span class="dot"></span><span class="dot"></span><span class="dot"></span>'; messages.appendChild(t); scrollDown(); return t; }
+      function removeEl(el){ if(el && el.parentNode){ el.parentNode.removeChild(el); } }
+      function scrollDown(){ try { messages.scrollTop = messages.scrollHeight; } catch(e){} }
+      async function fetchJSON(url, opts){
+        const res = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' }, opts||{}));
+        const data = await res.json().catch(()=>({}));
+        if (!res.ok) throw new Error(data.error || ('Error '+res.status));
+        return data;
+      }
+      form && form.addEventListener('submit', async function(e){
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const q = (input && input.value || '').trim();
+        if (!q) return;
+        appendUser(q);
+        input.value='';
+        const typing = showTyping();
+        try {
+          const resp = await fetchJSON('/api/v1/chat/recomendar', { method: 'POST', body: JSON.stringify({ mensaje: q }) });
+          var message = '';
+          var list = [];
+          if (Array.isArray(resp)) { list = resp; message = 'Esto te puede interesar:'; }
+          else if (resp && typeof resp === 'object') { message = resp.message || ''; list = Array.isArray(resp.suggestions) ? resp.suggestions : []; }
+          removeEl(typing);
+          if (!message && !list.length) { appendBot('No encontré resultados. Prueba con otra palabra.'); return; }
+          if (message) appendBot(message);
+          if (list.length) appendSuggestions(list);
+        } catch(err) {
+          removeEl(typing);
+          appendBot('No pude responder ahora. Intenta más tarde.');
+        }
+      }, true);
+    })();
+  </script>
 </body>
 </html>
+
+

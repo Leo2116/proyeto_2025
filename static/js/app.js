@@ -224,8 +224,39 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshUser();
     } catch (err) {
       if (loginError) {
-        loginError.textContent = err.message || 'Credenciales inválidas';
+        const msg = err && err.message ? err.message : 'Credenciales inválidas';
+        loginError.textContent = msg;
         loginError.classList.remove('hidden');
+
+        // Si requiere verificación, muestra botón para reenviar el correo
+        if (/verificar/i.test(msg) && /correo/i.test(msg)) {
+          let btn = document.getElementById('resend-verif-btn');
+          if (!btn) {
+            btn = document.createElement('button');
+            btn.id = 'resend-verif-btn';
+            btn.type = 'button';
+            btn.className = 'btn-secondary';
+            btn.style.marginTop = '.5rem';
+            btn.textContent = 'Reenviar verificación';
+            // Insertar después del párrafo de error
+            try { loginError.insertAdjacentElement('afterend', btn); } catch {}
+
+            btn.addEventListener('click', async () => {
+              btn.disabled = true;
+              try {
+                await fetchJSON('/api/v1/auth/resend-verification', {
+                  method: 'POST',
+                  body: JSON.stringify({ email })
+                });
+                loginError.textContent = 'Te enviamos un nuevo correo de verificación. Revisa SPAM.';
+              } catch (e2) {
+                loginError.textContent = (e2 && e2.message) ? e2.message : 'No se pudo reenviar la verificación.';
+              } finally {
+                btn.disabled = false;
+              }
+            });
+          }
+        }
       }
     }
   });

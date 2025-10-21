@@ -369,6 +369,8 @@
       }
 
       attachOverrides();
+      // Cargar productos existentes de la base de datos al iniciar
+      try { searchAll(''); } catch (e) { /* noop */ }
     })();
   </script>
 

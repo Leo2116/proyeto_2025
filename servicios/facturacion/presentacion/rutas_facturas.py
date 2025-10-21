@@ -21,20 +21,23 @@ def _generar_numero_factura(session) -> str:
     return f"{prefix}{sec:04d}"
 
 
-def _normalize_nit(raw: str | None) -> str:
-    """Normaliza NIT: por defecto 'C/F' (consumidor final). Acepta 'CF', 'C/F' o digitos con guion."""
+def _normalize_nit(raw: str | None) -> str | None:
+    """Normaliza/valida NIT.
+    - Vacío => 'C/F'
+    - 'CF'/'C/F' => 'C/F'
+    - Numérico con guiones (3-20) => tal cual
+    - Otro caso => None (inválido)
+    """
     s = (raw or "").strip()
     if not s:
         return "C/F"
     s_up = s.upper().replace(" ", "")
     if s_up in ("C/F", "CF"):
         return "C/F"
-    # permitir digitos y guiones
     import re
     if re.fullmatch(r"[0-9-]{3,20}", s_up):
         return s
-    # si no coincide, forzar a C/F para no bloquear
-    return "C/F"
+    return None
 
 
 def _ensure_factura_columns(engine) -> None:
@@ -63,6 +66,8 @@ def crear_factura():
     items = data.get("items") or []
     email = data.get("email")
     nit = _normalize_nit(data.get("nit"))
+    if nit is None:
+        return jsonify({"error": "NIT inválido. Usa solo números (y guiones) o 'C/F'."}), 400
     # Extras de checkout
     pago = (data.get("pago") or {})
     pago_metodo = (pago.get("metodo") or data.get("pago_metodo") or "").strip() or None

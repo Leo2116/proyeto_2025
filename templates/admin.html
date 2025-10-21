@@ -203,7 +203,8 @@
         </div>
         <div>
           <label>NIT</label>
-          <input id="sv-nit" type="text" value="C/F" />
+          <input id="sv-nit" type="text" value="C/F" inputmode="numeric" pattern="[0-9-]{3,20}|C/F|CF" title="Solo números (3-20), guiones o C/F" />
+          <small class="muted">Solo números (y guiones) o C/F</small>
         </div>
         <div>
           <label>Email (opcional)</label>
@@ -420,7 +421,14 @@ function fillForm(row){
       try{ const prods = await fetchJSON('/api/v1/admin/productos'); const p = (prods||[]).find(r=>r.id===id); if(!p){ alert('Producto no encontrado'); return; } svItems.push({ id: p.id, nombre: p.nombre, precio: Number(p.precio||0), cantidad }); renderSV(); }catch(e){ alert(e.message); }
     });
     document.getElementById('sv-guardar')?.addEventListener('click', async ()=>{
-      const nit = document.getElementById('sv-nit').value.trim()||'C/F'; const email = document.getElementById('sv-email').value.trim()||undefined; const metodo = document.getElementById('sv-metodo').value;
+      let nit = document.getElementById('sv-nit').value.trim()||'C/F'; const email = document.getElementById('sv-email').value.trim()||undefined; const metodo = document.getElementById('sv-metodo').value;
+      // Validar NIT: solo dígitos y guiones, o C/F
+      const nitUp = nit.toUpperCase().replace(/\s+/g,'');
+      if(!(nitUp==='C/F' || nitUp==='CF' || /^[0-9-]{3,20}$/.test(nitUp))){
+        document.getElementById('sv-msg').textContent = 'NIT inválido. Usa solo números (3-20) y guiones, o C/F';
+        return;
+      }
+      nit = (nitUp==='CF') ? 'C/F' : nit;
       if(!svItems.length){ document.getElementById('sv-msg').textContent = 'Agrega al menos un item'; return; }
       const payload = { items: svItems.map(x=>({ id:x.id, nombre:x.nombre, precio:x.precio, cantidad:x.cantidad })), nit, email, pago:{metodo}, entrega:{metodo:'recoger'}, origen:'tienda' };
       try{ const res = await fetchJSON('/api/v1/facturas', { method:'POST', body: JSON.stringify(payload) }); document.getElementById('sv-msg').textContent = `Venta guardada. Factura ${res.numero_factura}`; svItems.length=0; renderSV(); }

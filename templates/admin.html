@@ -428,7 +428,7 @@ function fillForm(row){
         document.getElementById('sv-msg').textContent = 'NIT inválido. Usa solo letras/números (3-20) y guiones (sin espacios), o C/F';
         return;
       }
-      nit = (nitUp==='CF') ? 'C/F' : nit;
+      nit = (nitUp==='CF') ? 'C/F' : nitUp;
       if(!svItems.length){ document.getElementById('sv-msg').textContent = 'Agrega al menos un item'; return; }
       const payload = { items: svItems.map(x=>({ id:x.id, nombre:x.nombre, precio:x.precio, cantidad:x.cantidad })), nit, email, pago:{metodo}, entrega:{metodo:'recoger'}, origen:'tienda' };
       try{ const res = await fetchJSON('/api/v1/facturas', { method:'POST', body: JSON.stringify(payload) }); document.getElementById('sv-msg').textContent = `Venta guardada. Factura ${res.numero_factura}`; svItems.length=0; renderSV(); }

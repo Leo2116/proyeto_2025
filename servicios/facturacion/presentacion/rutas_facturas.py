@@ -40,7 +40,7 @@ def _normalize_nit(raw: str | None) -> str | None:
         return None
     import re
     if re.fullmatch(r"^[A-Z0-9-]{3,20}$", s_up):
-        return s
+        return s_up
     return None
 
 

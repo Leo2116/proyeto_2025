@@ -25,7 +25,7 @@ def _normalize_nit(raw: str | None) -> str | None:
     """Normaliza/valida NIT.
     - Vacío => 'C/F'
     - 'CF'/'C/F' => 'C/F'
-    - Numérico con guiones (3-20), sin espacios => tal cual
+    - Alfanumérico (A-Z, 0-9) con guiones (3-20), sin espacios => tal cual
     - Cualquier espacio interno => inválido
     - Otro caso => None (inválido)
     """
@@ -39,7 +39,7 @@ def _normalize_nit(raw: str | None) -> str | None:
     if any(ch.isspace() for ch in s):
         return None
     import re
-    if re.fullmatch(r"^[0-9-]{3,20}$", s_up):
+    if re.fullmatch(r"^[A-Z0-9-]{3,20}$", s_up):
         return s
     return None
 

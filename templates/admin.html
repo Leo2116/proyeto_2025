@@ -203,8 +203,8 @@
         </div>
         <div>
           <label>NIT</label>
-          <input id="sv-nit" type="text" value="C/F" inputmode="numeric" pattern="[0-9-]{3,20}|C/F|CF" title="Solo números (3-20), guiones o C/F" />
-          <small class="muted">Solo números (y guiones) o C/F</small>
+          <input id="sv-nit" type="text" value="C/F" inputmode="text" pattern="[A-Za-z0-9-]{3,20}|C/F|CF" title="Solo letras/números (3-20), guiones o C/F" />
+          <small class="muted">Solo letras/números y guiones (sin espacios) o C/F</small>
         </div>
         <div>
           <label>Email (opcional)</label>
@@ -422,10 +422,10 @@ function fillForm(row){
     });
     document.getElementById('sv-guardar')?.addEventListener('click', async ()=>{
       let nit = document.getElementById('sv-nit').value.trim()||'C/F'; const email = document.getElementById('sv-email').value.trim()||undefined; const metodo = document.getElementById('sv-metodo').value;
-      // Validar NIT: solo dígitos y guiones, o C/F (no se permiten espacios)
+      // Validar NIT: solo letras/números y guiones, o C/F (no se permiten espacios)
       const nitUp = nit.toUpperCase();
-      if(!(nitUp==='C/F' || nitUp==='CF' || /^[0-9-]{3,20}$/.test(nitUp))){
-        document.getElementById('sv-msg').textContent = 'NIT inválido. Usa solo números (3-20) y guiones, o C/F';
+      if(!(nitUp==='C/F' || nitUp==='CF' || /^[A-Z0-9-]{3,20}$/.test(nitUp))){
+        document.getElementById('sv-msg').textContent = 'NIT inválido. Usa solo letras/números (3-20) y guiones (sin espacios), o C/F';
         return;
       }
       nit = (nitUp==='CF') ? 'C/F' : nit;

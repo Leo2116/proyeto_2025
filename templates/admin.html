@@ -422,8 +422,8 @@ function fillForm(row){
     });
     document.getElementById('sv-guardar')?.addEventListener('click', async ()=>{
       let nit = document.getElementById('sv-nit').value.trim()||'C/F'; const email = document.getElementById('sv-email').value.trim()||undefined; const metodo = document.getElementById('sv-metodo').value;
-      // Validar NIT: solo dígitos y guiones, o C/F
-      const nitUp = nit.toUpperCase().replace(/\s+/g,'');
+      // Validar NIT: solo dígitos y guiones, o C/F (no se permiten espacios)
+      const nitUp = nit.toUpperCase();
       if(!(nitUp==='C/F' || nitUp==='CF' || /^[0-9-]{3,20}$/.test(nitUp))){
         document.getElementById('sv-msg').textContent = 'NIT inválido. Usa solo números (3-20) y guiones, o C/F';
         return;

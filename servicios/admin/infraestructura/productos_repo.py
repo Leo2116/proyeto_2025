@@ -35,7 +35,9 @@ class AdminProductosRepo:
                   sinopsis TEXT,
                   portada_url TEXT,
                   stock INTEGER NOT NULL DEFAULT 0,
-                  eliminado INTEGER NOT NULL DEFAULT 0
+                  eliminado INTEGER NOT NULL DEFAULT 0,
+                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
@@ -124,9 +126,12 @@ class AdminProductosRepo:
                 c.execute("ALTER TABLE productos ADD COLUMN stock INTEGER NOT NULL DEFAULT 0")
             if 'eliminado' not in cols:
                 c.execute("ALTER TABLE productos ADD COLUMN eliminado INTEGER NOT NULL DEFAULT 0")
-            for extra_col in ('autor_id','editorial_id','isbn_id','paginas_id','material_id','categoria_id'):
+            for extra_col in ('autor_id','editorial_id','isbn_id','paginas_id','material_id','categoria_id','created_at','updated_at'):
                 if extra_col not in cols:
-                    c.execute(f"ALTER TABLE productos ADD COLUMN {extra_col} INTEGER")
+                    if extra_col in ('created_at','updated_at'):
+                        c.execute(f"ALTER TABLE productos ADD COLUMN {extra_col} DATETIME DEFAULT CURRENT_TIMESTAMP")
+                    else:
+                        c.execute(f"ALTER TABLE productos ADD COLUMN {extra_col} INTEGER")
 
     def _next_id(self) -> str:
         """Obtiene el siguiente ID autoincremental como string empezando en 1.
@@ -149,9 +154,9 @@ class AdminProductosRepo:
     def listar(self, *, incluir_eliminados: bool = False) -> List[Dict[str, Any]]:
         with self._conn() as c:
             if incluir_eliminados:
-                rows = c.execute("SELECT * FROM productos ORDER BY nombre ASC").fetchall()
+                rows = c.execute("SELECT * FROM productos ORDER BY (created_at IS NULL), created_at DESC, nombre ASC").fetchall()
             else:
-                rows = c.execute("SELECT * FROM productos WHERE eliminado = 0 ORDER BY nombre ASC").fetchall()
+                rows = c.execute("SELECT * FROM productos WHERE eliminado = 0 ORDER BY (created_at IS NULL), created_at DESC, nombre ASC").fetchall()
             return [
                 {
                     "id": r["id"],
@@ -279,7 +284,8 @@ class AdminProductosRepo:
                       isbn_id = COALESCE(?, isbn_id),
                       paginas_id = COALESCE(?, paginas_id),
                       material_id = COALESCE(?, material_id),
-                      categoria_id = COALESCE(?, categoria_id)
+                      categoria_id = COALESCE(?, categoria_id),
+                      updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
                 (

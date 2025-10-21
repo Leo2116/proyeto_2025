@@ -64,7 +64,7 @@ class SQLiteRepositorioProducto(IRepositorioProducto):
                 WHERE nombre LIKE ?
                    OR atributo_extra_1 LIKE ?
                    OR atributo_extra_2 LIKE ?
-                ORDER BY nombre ASC
+                ORDER BY (created_at IS NULL), created_at DESC, rowid DESC
                 """,
                 (like, like, like),
             ).fetchall()
@@ -109,7 +109,9 @@ class SQLiteRepositorioProducto(IRepositorioProducto):
 
     def obtener_todos(self) -> List[Producto]:
         with self._conn() as c:
-            rows = c.execute("SELECT * FROM productos ORDER BY nombre ASC").fetchall()
+            rows = c.execute(
+                "SELECT * FROM productos ORDER BY (created_at IS NULL), created_at DESC, rowid DESC"
+            ).fetchall()
         return [self._reconstruir(r) for r in rows]
 
     def buscar_por_consulta(self, consulta: str) -> List[Producto]:

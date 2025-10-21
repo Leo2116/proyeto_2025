@@ -5,7 +5,7 @@
 # ==============================================================================
 from typing import Optional
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 # Contrato de la capa de aplicación
 from servicios.servicio_autenticacion.aplicacion.repositorios.repositorio_usuario_interface import IRepositorioUsuario
@@ -21,6 +21,21 @@ from configuracion import Config
 Engine = create_engine(Config.SQLALCHEMY_DATABASE_URI, echo=False, future=True)
 Session = sessionmaker(bind=Engine, autoflush=False, autocommit=False, future=True)
 
+# Pequeña migración defensiva: asegurar columna is_admin en 'usuarios'
+def _ensure_is_admin_column():
+    try:
+        with Engine.begin() as conn:
+            # SQLite PRAGMA table_info devuelve: cid, name, type, notnull, dflt_value, pk
+            res = conn.exec_driver_sql("PRAGMA table_info(usuarios)")
+            cols = [row[1] for row in res]
+            if 'is_admin' not in cols:
+                conn.exec_driver_sql("ALTER TABLE usuarios ADD COLUMN is_admin BOOLEAN DEFAULT 0")
+    except Exception as e:
+        # No interrumpir la app si falla; solo loguear
+        print(f"[WARN] No se pudo verificar/agregar columna is_admin: {e}")
+
+_ensure_is_admin_column()
+
 # ==============================================================================
 # IMPLEMENTACIÓN DEL REPOSITORIO DE USUARIO (INFRAESTRUCTURA)
 # ==============================================================================
@@ -35,14 +50,12 @@ class SQLiteRepositorioUsuario(IRepositorioUsuario):
     # --------------------------------------------------------------------------
     def _map_to_domain(self, orm_usuario: UsuarioORM) -> Usuario:
         """Convierte un objeto ORM a la entidad de Dominio Usuario."""
-        # Nota: el dominio tiene es_admin; la tabla no.
-        # Usamos False por defecto para mantener compatibilidad.
         return Usuario(
             id_usuario=orm_usuario.id_usuario,
             nombre=orm_usuario.nombre,
             email=orm_usuario.email,
             password_hash=orm_usuario.password_hash,
-            es_admin=False,
+            es_admin=bool(getattr(orm_usuario, 'is_admin', False)),
             activo=orm_usuario.activo
         )
 
@@ -53,7 +66,8 @@ class SQLiteRepositorioUsuario(IRepositorioUsuario):
             nombre=domain_usuario.nombre,
             email=domain_usuario.email,
             password_hash=domain_usuario.password_hash,
-            activo=domain_usuario.activo
+            activo=domain_usuario.activo,
+            is_admin=bool(getattr(domain_usuario, 'es_admin', False))
             # verificado y token_verificacion quedan con sus defaults
         )
 
@@ -100,6 +114,11 @@ class SQLiteRepositorioUsuario(IRepositorioUsuario):
                 orm_existente.email = usuario.email
                 orm_existente.password_hash = usuario.password_hash
                 orm_existente.activo = usuario.activo
+                try:
+                    # Puede no existir si tabla antigua, pero _ensure_is_admin_column ya intenta agregarla
+                    setattr(orm_existente, 'is_admin', bool(getattr(usuario, 'es_admin', False)))
+                except Exception:
+                    pass
                 # No tocamos verificado/token aquí.
             else:
                 nuevo_orm = self._map_to_orm(usuario)

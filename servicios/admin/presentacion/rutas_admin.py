@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 from flask import Blueprint, request, jsonify, session
-from pathlib import Path
-import sqlite3
+import os
+import re
+import requests
 from typing import Any, Dict
 
 from configuracion import Config
+from utils.jwt import decode_jwt, JWTError
+from servicios.admin.infraestructura.productos_repo import AdminProductosRepo
+from servicios.admin.infraestructura.tickets_repo import TicketsRepo
 
 
 admin_bp = Blueprint("admin_bp", __name__, url_prefix="/api/v1/admin")
 
-# Ruta de la base de datos del catálogo (la misma que usa el servicio del catálogo)
-BASE_DIR = Path(__file__).resolve().parents[3]
-CATALOGO_DB = BASE_DIR / "data" / "catalogo.db"
-CATALOGO_DB.parent.mkdir(parents=True, exist_ok=True)
+_repo = AdminProductosRepo()
+_tickets_repo = TicketsRepo()
 
 
 def _is_admin() -> bool:
@@ -21,33 +23,26 @@ def _is_admin() -> bool:
     return bool(email and (email in (Config.ADMIN_EMAILS or [])))
 
 
-def _conn():
-    conn = sqlite3.connect(str(CATALOGO_DB))
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def _ensure_schema():
-    with _conn() as c:
-        c.execute(
-            """
-            CREATE TABLE IF NOT EXISTS productos (
-              id TEXT PRIMARY KEY,
-              nombre TEXT NOT NULL,
-              precio REAL NOT NULL,
-              tipo TEXT NOT NULL CHECK (tipo IN ('Libro','UtilEscolar','Producto')),
-              atributo_extra_1 TEXT,  -- autor (Libro) / marca (UtilEscolar)
-              atributo_extra_2 TEXT,  -- isbn  (Libro) / sku   (UtilEscolar)
-              sinopsis TEXT,
-              portada_url TEXT
-            )
-            """
-        )
+    _repo.ensure_schema()
+    _tickets_repo.ensure_schema()
+
+
+def _is_admin_request() -> bool:
+    """Permite validar admin via JWT Bearer o via sesión como fallback."""
+    auth = (request.headers.get("Authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        token = auth.split(" ", 1)[1].strip()
+        try:
+            payload = decode_jwt(token, getattr(Config, 'SECRET_KEY', ''))
+            return bool(payload.get("is_admin"))
+        except JWTError:
+            return False
+    return _is_admin()
 
 
 @admin_bp.before_app_request
 def _warmup_schema():
-    # Garantiza que la tabla exista cuando se use el admin
     try:
         _ensure_schema()
     except Exception:
@@ -56,28 +51,111 @@ def _warmup_schema():
 
 @admin_bp.get("/check")
 def admin_check():
+    # Preferir JWT si viene en Authorization: Bearer
+    auth = request.headers.get("Authorization") or ""
+    if auth.lower().startswith("bearer "):
+        token = auth.split(" ", 1)[1].strip()
+        try:
+            payload = decode_jwt(token, getattr(Config, 'SECRET_KEY', ''))
+            return jsonify({"admin": bool(payload.get("is_admin"))}), 200
+        except JWTError:
+            return jsonify({"admin": False}), 200
+    # Fallback compatibilidad: sesión + ADMIN_EMAILS
     return jsonify({"admin": _is_admin()}), 200
+
+
+# ---------------- Tickets -----------------
+
+@admin_bp.get("/tickets")
+def admin_listar_tickets():
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    status = request.args.get("status")
+    page = int(request.args.get("page", "1") or 1)
+    limit = int(request.args.get("limit", "50") or 50)
+    data = _tickets_repo.listar(status=status, page=page, limit=limit)
+    return jsonify(data), 200
+
+
+@admin_bp.get("/tickets/<int:ticket_id>")
+def admin_obtener_ticket(ticket_id: int):
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    tk = _tickets_repo.obtener(ticket_id)
+    if not tk:
+        return jsonify({"error": "No existe"}), 404
+    return jsonify(tk), 200
+
+
+@admin_bp.post("/tickets/<int:ticket_id>/assign")
+def admin_asignar_ticket(ticket_id: int):
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    body = request.get_json(silent=True) or {}
+    assigned_to = (body.get("assigned_to") or "").strip()
+    if not assigned_to:
+        return jsonify({"error": "'assigned_to' es requerido"}), 400
+    assigned_by = (session.get("user_email") or "").strip() or None
+    notes = (body.get("notes") or None)
+    priority = (body.get("priority") or None)
+    ok = _tickets_repo.asignar(ticket_id, assigned_to, assigned_by=assigned_by, notes=notes, priority=priority)
+    if not ok:
+        return jsonify({"error": "No se pudo asignar (ticket no existe?)"}), 404
+    # Notificar por correo si assigned_to parece un email y SMTP está configurado
+    try:
+        if re.search(r"@", assigned_to):
+            from servicios.servicio_autenticacion.infraestructura.clientes_externos.google_smtp_cliente import GoogleSMTPCliente
+            smtp = GoogleSMTPCliente()
+            asunto = f"Nuevo ticket asignado #{ticket_id}"
+            detalle = _tickets_repo.obtener(ticket_id) or {}
+            html = f"""
+                <h3>Ticket asignado</h3>
+                <p><strong>ID:</strong> {ticket_id}</p>
+                <p><strong>Pregunta:</strong> { (detalle.get('question') or '')[:400] }</p>
+                <p><strong>Estado:</strong> {detalle.get('status') or 'assigned'}</p>
+                <p><strong>Prioridad:</strong> {priority or (detalle.get('priority') or 'normal')}</p>
+                <p><strong>Notas:</strong> {notes or ''}</p>
+                <hr>
+                <p>Ir al panel: <a href="{getattr(Config, 'APP_BASE_URL', 'http://127.0.0.1:5000')}/admin">Administración</a></p>
+            """
+            smtp.enviar_correo(destinatario=assigned_to, asunto=asunto, cuerpo_html=html)
+    except Exception:
+        pass
+    # Slack opcional
+    try:
+        webhook = os.getenv('SLACK_WEBHOOK_URL')
+        if webhook:
+            detalle = _tickets_repo.obtener(ticket_id) or {}
+            text = f"Ticket #{ticket_id} asignado a {assigned_to}. Prioridad: {priority or detalle.get('priority') or 'normal'}."
+            requests.post(webhook, json={"text": text}, timeout=5)
+    except Exception:
+        pass
+    return jsonify({"ok": True}), 200
+
+
+@admin_bp.post("/tickets/<int:ticket_id>/status")
+def admin_actualizar_estado_ticket(ticket_id: int):
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    body = request.get_json(silent=True) or {}
+    status = (body.get("status") or "").strip()
+    if status not in ("open", "assigned", "resolved", "closed"):
+        return jsonify({"error": "status inválido"}), 400
+    answer = body.get("answer")
+    notes = body.get("notes")
+    ok = _tickets_repo.actualizar_estado(ticket_id, status, answer=answer, notes=notes)
+    if not ok:
+        return jsonify({"error": "No se pudo actualizar"}), 404
+    return jsonify({"ok": True}), 200
 
 
 @admin_bp.get("/productos")
 def admin_listar_productos():
     if not _is_admin():
         return jsonify({"error": "No autorizado"}), 403
-    with _conn() as c:
-        rows = c.execute("SELECT * FROM productos ORDER BY nombre ASC").fetchall()
-        data = []
-        for r in rows:
-            data.append({
-                "id": r["id"],
-                "nombre": r["nombre"],
-                "precio": r["precio"],
-                "tipo": r["tipo"],
-                "autor_marca": r["atributo_extra_1"],
-                "isbn_sku": r["atributo_extra_2"],
-                "sinopsis": r["sinopsis"],
-                "portada_url": r["portada_url"],
-            })
-        return jsonify(data), 200
+    incluir_eliminados = (request.args.get("include_deleted") or "").lower() in ("1","true","yes")
+    data = _repo.listar(incluir_eliminados=incluir_eliminados)
+    return jsonify(data), 200
 
 
 def _validate_payload(payload: Dict[str, Any], is_update: bool = False):
@@ -86,8 +164,24 @@ def _validate_payload(payload: Dict[str, Any], is_update: bool = False):
     precio = float(payload.get("precio") or 0)
     autor_marca = (payload.get("autor_marca") or "").strip() or None
     isbn_sku = (payload.get("isbn_sku") or "").strip() or None
+    editorial = (payload.get("editorial") or "").strip() or None
+    # páginas puede venir como número o string
+    paginas = None
+    try:
+        if payload.get("paginas") not in (None, ""):
+            paginas = int(payload.get("paginas"))
+    except Exception:
+        paginas = None
+    material = (payload.get("material") or "").strip() or None
+    categoria = (payload.get("categoria") or "").strip() or None
     sinopsis = (payload.get("sinopsis") or None)
     portada_url = (payload.get("portada_url") or None)
+    stock = None
+    try:
+        if payload.get("stock") is not None:
+            stock = int(payload.get("stock") or 0)
+    except Exception:
+        stock = None
 
     if not is_update:
         if not nombre:
@@ -103,8 +197,13 @@ def _validate_payload(payload: Dict[str, Any], is_update: bool = False):
         "precio": precio,
         "autor_marca": autor_marca,
         "isbn_sku": isbn_sku,
+        "editorial": editorial,
+        "paginas": paginas,
+        "material": material,
+        "categoria": categoria,
         "sinopsis": sinopsis,
         "portada_url": portada_url,
+        "stock": stock,
     }, None
 
 
@@ -117,29 +216,12 @@ def admin_crear_producto():
     if err:
         return jsonify({"error": err}), 400
 
-    # ID: usa el que venga o genera uno simple a partir de nombre
-    pid = (payload.get("id") or data["nombre"].lower().replace(" ", "_")).strip()
-    with _conn() as c:
-        try:
-            c.execute(
-                """
-                INSERT INTO productos (id, nombre, precio, tipo, atributo_extra_1, atributo_extra_2, sinopsis, portada_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    pid,
-                    data["nombre"],
-                    data["precio"],
-                    data["tipo"],
-                    data["autor_marca"],
-                    data["isbn_sku"],
-                    data["sinopsis"],
-                    data["portada_url"],
-                ),
-            )
-            return jsonify({"ok": True, "id": pid}), 201
-        except sqlite3.IntegrityError:
-            return jsonify({"error": "ID ya existe"}), 409
+    try:
+        # Generar ID automáticamente, comenzando desde 1
+        pid = _repo.crear_auto(data)
+        return jsonify({"ok": True, "id": pid}), 201
+    except Exception:
+        return jsonify({"error": "No se pudo crear"}), 500
 
 
 @admin_bp.put("/productos/<string:pid>")
@@ -150,41 +232,34 @@ def admin_actualizar_producto(pid: str):
     data, err = _validate_payload(payload, is_update=True)
     if err:
         return jsonify({"error": err}), 400
-    with _conn() as c:
-        cur = c.execute("SELECT COUNT(1) AS n FROM productos WHERE id = ?", (pid,)).fetchone()
-        if not cur or (cur[0] or 0) == 0:
-            return jsonify({"error": "No existe"}), 404
-        c.execute(
-            """
-            UPDATE productos
-              SET nombre = COALESCE(?, nombre),
-                  precio = COALESCE(?, precio),
-                  tipo = COALESCE(?, tipo),
-                  atributo_extra_1 = COALESCE(?, atributo_extra_1),
-                  atributo_extra_2 = COALESCE(?, atributo_extra_2),
-                  sinopsis = COALESCE(?, sinopsis),
-                  portada_url = COALESCE(?, portada_url)
-            WHERE id = ?
-            """,
-            (
-                data["nombre"] or None,
-                data["precio"] if payload.get("precio") is not None else None,
-                data["tipo"] or None,
-                data["autor_marca"],
-                data["isbn_sku"],
-                data["sinopsis"],
-                data["portada_url"],
-                pid,
-            ),
-        )
-        return jsonify({"ok": True, "id": pid}), 200
+    if not _repo.existe(pid):
+        return jsonify({"error": "No existe"}), 404
+    _repo.actualizar(pid, data)
+    return jsonify({"ok": True, "id": pid}), 200
 
 
 @admin_bp.delete("/productos/<string:pid>")
 def admin_eliminar_producto(pid: str):
     if not _is_admin():
         return jsonify({"error": "No autorizado"}), 403
-    with _conn() as c:
-        c.execute("DELETE FROM productos WHERE id = ?", (pid,))
-        return jsonify({"ok": True}), 200
+    _repo.eliminar(pid)
+    return jsonify({"ok": True}), 200
+
+
+@admin_bp.post("/productos/<string:pid>/stock")
+def admin_incrementar_stock(pid: str):
+    if not _is_admin():
+        return jsonify({"error": "No autorizado"}), 403
+    body = request.get_json(silent=True) or {}
+    try:
+        cantidad = int(body.get("cantidad") or 0)
+    except Exception:
+        return jsonify({"error": "'cantidad' debe ser entero."}), 400
+    if cantidad == 0:
+        return jsonify({"error": "'cantidad' no puede ser 0."}), 400
+    try:
+        _repo.incrementar_stock(pid, cantidad)
+        return jsonify({"ok": True, "id": pid, "delta": cantidad}), 200
+    except Exception:
+        return jsonify({"error": "No se pudo actualizar el stock."}), 500
 

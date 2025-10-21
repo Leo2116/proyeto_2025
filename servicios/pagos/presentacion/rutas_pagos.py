@@ -14,7 +14,7 @@ def api_stripe_create_payment_intent():
     try:
         total = float(total)
     except Exception:
-        return jsonify({"error": "'total' debe ser numérico."}), 400
+        return jsonify({"error": "'total' debe ser numerico."}), 400
 
     if total <= 0:
         return jsonify({"error": "El total debe ser mayor a 0."}), 400
@@ -39,7 +39,7 @@ def api_paypal_create_order():
     try:
         total = float(total)
     except Exception:
-        return jsonify({"error": "'total' debe ser numérico."}), 400
+        return jsonify({"error": "'total' debe ser numerico."}), 400
 
     if total <= 0:
         return jsonify({"error": "El total debe ser mayor a 0."}), 400
@@ -59,4 +59,3 @@ def api_paypal_create_order():
         return jsonify({"error": str(ve)}), 400
     except Exception:
         return jsonify({"error": "Error al crear orden en PayPal."}), 502
-

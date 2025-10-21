@@ -25,7 +25,7 @@ class RegistrarUsuario:
         self.repositorio = repositorio
         self.hasher = hasher
 
-    def ejecutar(self, nombre: str, email: str, password: str) -> Usuario:
+    def ejecutar(self, nombre: str, email: str, password: str, es_admin: bool = False) -> Usuario:
         """
         Ejecuta la logica de registro.
 
@@ -49,7 +49,7 @@ class RegistrarUsuario:
             nombre=nombre,
             email=email,
             password_hash=password_hash,
-            es_admin=False, # Por defecto, no es administrador
+            es_admin=bool(es_admin), # Seteado desde capa de presentación en registro
             activo=True
         )
 

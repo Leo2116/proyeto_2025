@@ -54,6 +54,13 @@ class Config:
     # -------------------- reCAPTCHA (opcional) --------------------
     RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
     RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
+    # Enterprise (Google Cloud) opcional
+    RECAPTCHA_ENTERPRISE = os.getenv("RECAPTCHA_ENTERPRISE", "false").lower() in ("1", "true", "yes")
+    RECAPTCHA_PROJECT_ID = os.getenv("RECAPTCHA_PROJECT_ID")
+    RECAPTCHA_API_KEY = os.getenv("RECAPTCHA_API_KEY")
+    # Acciones esperadas (solo si usas Enterprise con acciones; opcional)
+    RECAPTCHA_ACTION_LOGIN = os.getenv("RECAPTCHA_ACTION_LOGIN", "login")
+    RECAPTCHA_ACTION_REGISTER = os.getenv("RECAPTCHA_ACTION_REGISTER", "register")
 
     # -------------------- Enlaces y límites --------------------
     APP_BASE_URL = os.getenv("APP_BASE_URL", "http://127.0.0.1:5000").rstrip("/")
@@ -61,4 +68,12 @@ class Config:
 
     # -------------------- Administración --------------------
     # Emails con acceso de administrador (separados por coma)
-    ADMIN_EMAILS = [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", os.getenv("ADMIN_EMAIL", "")).split(",") if e.strip()]
+    # Por defecto incluye dos ejemplos; sobreescribe con ADMIN_EMAILS en .env
+    ADMIN_EMAILS = [
+        e.strip().lower()
+        for e in os.getenv(
+            "ADMIN_EMAILS",
+            os.getenv("ADMIN_EMAIL", "admin@libreriajireh.com,tu_correo_admin@example.com"),
+        ).split(",")
+        if e.strip()
+    ]

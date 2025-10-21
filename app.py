@@ -7,10 +7,10 @@ from servicios.servicio_catalogo.presentacion.rutas import catalogo_bp
 from servicios.servicio_autenticacion.presentacion.rutas import auth_bp  # <- NUEVO
 from servicios.api_externa.presentacion.rutas_books import books_bp
 from servicios.api_externa.presentacion.rutas_postal import postal_bp
-from servicios.chat.presentacion.rutas_chat import chat_bp
 from servicios.pagos.presentacion.rutas_pagos import payments_bp
 from servicios.facturacion.presentacion.rutas_facturas import facturas_bp
 from servicios.ia.presentacion.rutas_llm import ia_bp
+from servicios.ia.presentacion.rutas_gemini_ping import ai_dev_bp
 from servicios.admin.presentacion.rutas_admin import admin_bp
 
 def crear_app():
@@ -22,16 +22,28 @@ def crear_app():
     app.config.from_object(Config)
     # Por si tu Config no trae SECRET_KEY
     app.config.setdefault("SECRET_KEY", "cambia-esto-por-uno-seguro")
+    # Evitar redirecciones 308/301 automáticas por barra final en rutas
+    # (permite acceder con y sin "/" al final sin redirigir)
+    try:
+        app.url_map.strict_slashes = False
+    except Exception:
+        pass
+
+    # Hacer disponible la configuración en todas las plantillas (p.ej. reCAPTCHA SITE KEY)
+    @app.context_processor
+    def inject_config():
+        return {"config": app.config}
 
     # Blueprints
     app.register_blueprint(catalogo_bp)  # mantiene tu registro existente
     app.register_blueprint(auth_bp)      # <- NUEVO: /api/v1/auth/*
     app.register_blueprint(books_bp)     # <- NUEVO: /api/v1/books
     app.register_blueprint(postal_bp)    # <- NUEVO: /api/v1/postal/<codigo>
-    app.register_blueprint(chat_bp)      # <- NUEVO: /api/v1/chat/recomendar
+    # chat recomendado deshabilitado: usar solo IA (/api/v1/ia/*)
     app.register_blueprint(payments_bp)  # <- NUEVO: /api/v1/payments/*
     app.register_blueprint(facturas_bp)  # <- NUEVO: /api/v1/facturas
     app.register_blueprint(ia_bp)        # <- NUEVO: /api/v1/ia/*
+    app.register_blueprint(ai_dev_bp)    # <- NUEVO: /api/v1/ai/gemini-ping
     app.register_blueprint(admin_bp)     # <- NUEVO: /api/v1/admin/*
 
     # ----------------- Carrito -----------------

@@ -104,6 +104,10 @@ class UsuarioORM(Base):
     # Token de verificación por correo (opcional)
     token_verificacion = Column(String, nullable=True)
 
+    # Rol administrador
+    # Nuevo campo: indica si el usuario es administrador de la plataforma
+    is_admin = Column(Boolean, default=False, nullable=False)
+
     # Timestamps básicos
     creado_en = Column(DateTime, server_default=func.now(), nullable=False)
     actualizado_en = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -116,6 +120,15 @@ class FacturaORM(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     numero_factura = Column(String, unique=True, nullable=False, index=True)
     user_email = Column(String, nullable=True)
+    # NIT del cliente. "C/F" para consumidor final.
+    nit = Column(String, nullable=True)
+    # Extras de checkout
+    pago_metodo = Column(String, nullable=True)          # 'stripe' | 'paypal'
+    entrega_metodo = Column(String, nullable=True)       # 'domicilio' | 'recoger'
+    envio_nombre = Column(String, nullable=True)
+    envio_telefono = Column(String, nullable=True)
+    envio_direccion = Column(String, nullable=True)
+    origen = Column(String, nullable=True)               # 'web' | 'tienda'
     total = Column(Float, nullable=False, default=0.0)
     fecha = Column(DateTime, server_default=func.now(), nullable=False)
 

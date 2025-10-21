@@ -86,7 +86,7 @@
   </main>
 
   <footer class="footer">
-    <p>&copy; 2024 Librería Jehová Jiréh. Todos los derechos reservados.</p>
+    <p>&copy; 2025 Librería Jehová Jiréh. Todos los derechos reservados.</p>
   </footer>
 
   <!-- MODAL ÚNICO: LOGIN / REGISTRO CON PESTAÑAS -->
@@ -141,6 +141,19 @@
         <div><strong>Nombre:</strong> <span id="profile-nombre">-</span></div>
         <div><strong>Email:</strong> <span id="profile-email">-</span></div>
         <div><strong>Verificado:</strong> <span id="profile-verificado">-</span></div>
+        <hr/>
+        <div><strong>Mis compras</strong></div>
+        <div style="display:flex; gap:.4rem; align-items:center; flex-wrap:wrap;">
+          <label>Desde:</label>
+          <input type="date" id="orders-from-date" />
+          <label>Hasta:</label>
+          <input type="date" id="orders-to-date" />
+          <button id="orders-filter-btn" class="btn-secondary">Filtrar</button>
+        </div>
+        <div id="profile-orders" class="orders-list" style="display:grid;gap:.4rem"></div>
+        <div id="profile-orders-actions" style="display:flex;justify-content:center;margin-top:.5rem;">
+          <button id="orders-more-btn" class="btn-secondary" style="display:none;">Ver más</button>
+        </div>
       </div>
       <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:1rem;">
         <button id="profile-logout" class="btn-secondary">Cerrar sesión</button>
@@ -177,11 +190,14 @@
         <div class="assistant-info">
           <div class="avatar"><i class="ph-robot"></i><span class="status-dot"></span></div>
           <div class="title-wrap">
-            <div class="title">Asistente de la Librería</div>
+            <div class="title">Lia - Asistente de la libreria</div>
             <div class="subtitle">En línea</div>
           </div>
         </div>
-        <button id="assistant-close" class="icon-btn" title="Cerrar" aria-label="Cerrar">&times;</button>
+        <div class="assistant-actions">
+          <button id="assistant-clear" class="icon-btn" title="Limpiar" aria-label="Limpiar"><i class="ph-trash"></i></button>
+          <button id="assistant-close" class="icon-btn" title="Cerrar" aria-label="Cerrar">&times;</button>
+        </div>
       </div>
       <div id="assistant-messages" class="assistant-messages">
         <div class="assistant-tip">Escríbeme lo que buscas: “cuadernos”, “biblia”, “lápiz”…</div>
@@ -194,7 +210,7 @@
   </div>
   <div id="assistant-backdrop" class="assistant-backdrop hidden"></div>
 
-  <!-- Dev helpers (ocultos por defecto)
+  <!--Dev helpers ()-->
   <div id="dev-helpers" style="display:none">
     <button onclick="buscarLibros('python').then(console.log)">Test Books</button>
     <button onclick="consultarPostal('01001').then(console.log)">Test Postal</button>
@@ -202,7 +218,7 @@
     <button onclick="crearOrderPayPal(100,'GTQ').then(console.log)">Test PayPal</button>
     <button onclick="crearFacturaLocal([{id:'TEST',nombre:'Demo',precio:10,cantidad:2}], 'demo@example.com').then(console.log)">Test Factura</button>
   </div>
-  -->
+  
 
   <!-- Bridge para legacy IDs -->
   <script>
@@ -358,7 +374,7 @@
 
   <script src="/static/js/app.js"></script>
   <script>
-    // Lógica del asistente virtual (UI + llamadas a /api/v1/chat/recomendar)
+    // Lógica del asistente virtual (UI + llamadas a /api/v1/ia/chat)
     (function () {
       const toggleBtn = document.getElementById('assistant-toggle');
       const panel     = document.getElementById('assistant-panel');
@@ -368,9 +384,19 @@
       const messages  = document.getElementById('assistant-messages');
       const aback     = document.getElementById('assistant-backdrop');
 
+      function greetIfNeeded(){
+        try {
+          if (!messages) return;
+          const hasPrev = messages.querySelector('.assistant-user, .assistant-bot');
+          if (hasPrev) return;
+          const now = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+          messages.innerHTML = `<div class="assistant-bot"><div class="msg-text">Hola! Soy Lia, asistente de la libreria. Horario de atencion: 8:00 am a 7:00 pm. En que puedo ayudarte?</div><div class="msg-time">${now}</div></div>`;
+        } catch(e){}
+      }
       function showPanel() {
         panel?.classList.remove('hidden');
         aback?.classList.remove('hidden');
+        greetIfNeeded();
         setTimeout(()=>input?.focus(), 50);
       }
       function hidePanel() {
@@ -379,6 +405,13 @@
       }
       toggleBtn?.addEventListener('click', showPanel);
       closeBtn?.addEventListener('click', hidePanel);
+      // Limpiar conversación
+      const clearBtn = document.getElementById('assistant-clear');
+      clearBtn?.addEventListener('click', () => {
+        if (messages) {
+          messages.innerHTML = '<div class="assistant-tip">Escribeme lo que buscas: "cuadernos", "biblia", "lapiz".</div>';
+        }
+      });
       aback?.addEventListener('click', hidePanel);
 
       async function fetchJSON(url, opts={}) {
@@ -439,19 +472,25 @@
         if (item) addToCartFromSuggestion(item);
       });
 
+      // Evita doble registro si el modo Messenger está activo en otro script
+      if (window.__ASSISTANT_MESSENGER_ACTIVE) return;
       form?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const q = (input?.value || '').trim();
         if (!q) return;
-        messages.innerHTML = `<div class="assistant-user">${q}</div><div class="assistant-loading">Buscando recomendaciones...</div>`;
+        try { input.value = ''; } catch(e){}
+        messages.innerHTML += `<div class="assistant-user"><div class=\"msg-text\">${q}</div><div class=\"msg-time\">${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div></div><div class=\"assistant-loading\">Buscando recomendaciones...</div>`;
         try {
-          const resp = await fetchJSON('/api/v1/chat/recomendar', { method: 'POST', body: JSON.stringify({ mensaje: q }) });
+          const resp = await fetchJSON('/api/v1/ia/chat', { method: 'POST', body: JSON.stringify({ mensaje: q }) });
+          // Si viene de IA (objeto con 'respuesta' o 'message'), mostrar texto y salir
+          const _msg = (resp && typeof resp === 'object') ? (resp.message || resp.respuesta || '') : '';
+          if (_msg) { messages.innerHTML += `<div class="assistant-bot"><div class=\"msg-text\">${_msg}</div><div class=\"msg-time\">${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div></div>`; return; }
           const list = Array.isArray(resp) ? resp : [];
           if (!list.length) {
             messages.innerHTML = `<div class="assistant-tip">No encontré recomendaciones. Intenta otra palabra.</div>`;
             return;
           }
-          messages.innerHTML = `<div class="assistant-bot">Esto te puede interesar:</div>` + list.map(suggestionItemHTML).join('');
+          messages.innerHTML += `<div class="assistant-bot"><div class=\"msg-text\">Esto te puede interesar:</div><div class=\"msg-time\">${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div></div>` + list.map(suggestionItemHTML).join('');
         } catch (err) {
           messages.innerHTML = `<div class="assistant-error">No pude recomendar ahora. Intenta más tarde.</div>`;
         }
@@ -480,34 +519,40 @@
           + '</div>'
         );
       }
-      function appendUser(text){ if(!messages) return; const d=document.createElement('div'); d.className='assistant-user'; d.textContent=text; messages.appendChild(d); scrollDown(); }
-      function appendBot(text){ if(!messages) return; if(!text) return; const d=document.createElement('div'); d.className='assistant-bot'; d.textContent=text; messages.appendChild(d); scrollDown(); }
+      function timeNow(){ try{ return new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }catch(e){ return ''; } }
+      function appendUser(text){ if(!messages) return; const d=document.createElement('div'); d.className='assistant-user'; const t=document.createElement('div'); t.className='msg-text'; t.textContent=text; const tm=document.createElement('div'); tm.className='msg-time'; tm.textContent=timeNow(); d.appendChild(t); d.appendChild(tm); messages.appendChild(d); scrollDown(); }
+      function appendBot(text){ if(!messages) return; if(!text) return; const d=document.createElement('div'); d.className='assistant-bot'; const t=document.createElement('div'); t.className='msg-text'; t.textContent=text; const tm=document.createElement('div'); tm.className='msg-time'; tm.textContent=timeNow(); d.appendChild(t); d.appendChild(tm); messages.appendChild(d); scrollDown(); }
       function appendSuggestions(list){ if(!messages) return; if(!Array.isArray(list) || !list.length) return; const wrap=document.createElement('div'); wrap.innerHTML = list.map(suggestionItemHTML).join(''); messages.appendChild(wrap); scrollDown(); }
       function showTyping(){ if(!messages) return null; const t=document.createElement('div'); t.className='assistant-typing'; t.innerHTML='<span class="dot"></span><span class="dot"></span><span class="dot"></span>'; messages.appendChild(t); scrollDown(); return t; }
       function removeEl(el){ if(el && el.parentNode){ el.parentNode.removeChild(el); } }
       function scrollDown(){ try { messages.scrollTop = messages.scrollHeight; } catch(e){} }
       async function fetchJSON(url, opts){
         const res = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' }, opts||{}));
-        const data = await res.json().catch(()=>({}));
-        if (!res.ok) throw new Error(data.error || ('Error '+res.status));
+        const text = await res.text();
+        let data;
+        try { data = text ? JSON.parse(text) : null; } catch(_) { data = null; }
+        if (!res.ok || data == null) throw new Error((data && data.error) || ('Respuesta invalida ('+res.status+')'));
         return data;
       }
+      // Activa modo Messenger y desactiva otros listeners del primer script
+      window.__ASSISTANT_MESSENGER_ACTIVE = true;
       form && form.addEventListener('submit', async function(e){
         e.preventDefault();
         e.stopImmediatePropagation();
+        try { e.stopPropagation(); } catch(_) {}
         const q = (input && input.value || '').trim();
         if (!q) return;
         appendUser(q);
         input.value='';
         const typing = showTyping();
         try {
-          const resp = await fetchJSON('/api/v1/chat/recomendar', { method: 'POST', body: JSON.stringify({ mensaje: q }) });
+          const resp = await fetchJSON('/api/v1/ia/chat', { method: 'POST', body: JSON.stringify({ mensaje: q }) });
           var message = '';
           var list = [];
           if (Array.isArray(resp)) { list = resp; message = 'Esto te puede interesar:'; }
-          else if (resp && typeof resp === 'object') { message = resp.message || ''; list = Array.isArray(resp.suggestions) ? resp.suggestions : []; }
+          else if (resp && typeof resp === 'object') { message = (resp.message || resp.respuesta || ''); list = Array.isArray(resp.suggestions) ? resp.suggestions : []; }
           removeEl(typing);
-          if (!message && !list.length) { appendBot('No encontré resultados. Prueba con otra palabra.'); return; }
+          if (!message && !list.length) { appendBot('No pude responder ahora. Intenta más tarde.'); return; }
           if (message) appendBot(message);
           if (list.length) appendSuggestions(list);
         } catch(err) {
@@ -515,10 +560,3 @@
           appendBot('No pude responder ahora. Intenta más tarde.');
         }
       }, true);
-    })();
-  </script>
-</body>
-</html>
-
-
-

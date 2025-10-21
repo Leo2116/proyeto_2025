@@ -7,6 +7,7 @@ __pycache__/
 .Python
 venv/
 .env
+*.bak
 
 # DB/Cache
 *.sqlite

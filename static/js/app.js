@@ -22,6 +22,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const loginForm   = document.getElementById('login-form');
   const loginError  = document.getElementById('login-error');
+  // reCAPTCHA widget ids (render explícito)
+  let loginRecaptchaId = null;
+  let registerRecaptchaId = null;
+
+  function getGre() {
+    try {
+      if (window.grecaptcha) {
+        return window.grecaptcha.enterprise || window.grecaptcha;
+      }
+    } catch {}
+    return null;
+  }
 
   const registerForm = document.getElementById('register-form');
   const registerMsg  = document.getElementById('register-msg');
@@ -165,7 +177,49 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================
   // Auth (me / login / logout / register)
   // ==========================
-  function openAuth()  { authModal?.classList.remove('hidden'); }
+  function waitForRecaptcha(cb, tries = 0) {
+    const gre = getGre();
+    if (gre && typeof gre.render === 'function') return cb();
+    if (tries > 25) return; // ~5s
+    setTimeout(() => waitForRecaptcha(cb, tries + 1), 200);
+  }
+
+  function ensureRecaptchaRendered(form, assignId) {
+    try {
+      const holder = form?.querySelector('.g-recaptcha');
+      if (!holder) return;
+      // Si ya tiene iframe, se considera renderizado
+      const already = holder.querySelector('iframe');
+      if (already) return;
+      const sitekey = holder.getAttribute('data-sitekey');
+      if (!sitekey) return;
+      waitForRecaptcha(() => {
+        const gre = getGre();
+        const id = gre.render(holder, { sitekey });
+        if (typeof assignId === 'function') assignId(id);
+      });
+    } catch {}
+  }
+
+  function resetRecaptcha(id) {
+    try {
+      if (id !== null) {
+        const gre = getGre();
+        if (gre && typeof gre.reset === 'function') gre.reset(id);
+        else if (window.grecaptcha && typeof window.grecaptcha.reset === 'function') window.grecaptcha.reset(id);
+      }
+    } catch {}
+  }
+
+  function openAuth()  {
+    authModal?.classList.remove('hidden');
+    // Renderizar el reCAPTCHA del tab visible
+    if (!loginForm?.classList.contains('hidden')) {
+      ensureRecaptchaRendered(loginForm, (id) => { loginRecaptchaId = id; });
+    } else if (!registerForm?.classList.contains('hidden')) {
+      ensureRecaptchaRendered(registerForm, (id) => { registerRecaptchaId = id; });
+    }
+  }
   function closeAuth() { authModal?.classList.add('hidden'); }
   authClose?.addEventListener('click', closeAuth);
   function openProfile() { const m = document.getElementById('profile-modal'); if (m) m.classList.remove('hidden'); }
@@ -183,12 +237,16 @@ document.addEventListener('DOMContentLoaded', () => {
     tabRegister?.setAttribute('aria-selected','false');
     loginForm?.classList.remove('hidden');
     registerForm?.classList.add('hidden');
+    // Asegurar render del reCAPTCHA en Login
+    ensureRecaptchaRendered(loginForm, (id) => { loginRecaptchaId = id; });
   }
   function showRegisterTab() {
     tabLogin?.setAttribute('aria-selected','false');
     tabRegister?.setAttribute('aria-selected','true');
     loginForm?.classList.add('hidden');
     registerForm?.classList.remove('hidden');
+    // Asegurar render del reCAPTCHA en Registro
+    ensureRecaptchaRendered(registerForm, (id) => { registerRecaptchaId = id; });
   }
   tabLogin?.addEventListener('click', showLoginTab);
   tabRegister?.addEventListener('click', showRegisterTab);
@@ -200,7 +258,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const nombre = me.user.nombre || me.user.email || 'Usuario';
         if (userBtn) {
           userBtn.innerHTML = `<i class="ph-user"></i> <span style="font-size:.9rem;margin-left:.35rem;">${nombre}</span>`;
-          userBtn.onclick = async () => { try { const m = await fetchJSON('/api/v1/auth/me'); const u = (m && m.user) || {}; if (document.getElementById('profile-nombre')) document.getElementById('profile-nombre').textContent = u.nombre || 'Usuario'; if (document.getElementById('profile-email')) document.getElementById('profile-email').textContent = u.email || '-'; if (document.getElementById('profile-verificado')) document.getElementById('profile-verificado').textContent = (u.verificado ? 'Sí' : 'No'); } catch {} const pm = document.getElementById('profile-modal'); if (pm) pm.classList.remove('hidden'); };
+          userBtn.onclick = async () => {
+            try {
+              const m = await fetchJSON('/api/v1/auth/me');
+              const u = (m && m.user) || {};
+              document.getElementById('profile-nombre')?.appendChild(document.createTextNode(''));
+              if (document.getElementById('profile-nombre')) document.getElementById('profile-nombre').textContent = u.nombre || 'Usuario';
+              if (document.getElementById('profile-email')) document.getElementById('profile-email').textContent = u.email || '-';
+              if (document.getElementById('profile-verificado')) document.getElementById('profile-verificado').textContent = (u.verificado ? 'Sí' : 'No');
+              await loadUserOrders(u.email);
+            } catch {}
+            const pm = document.getElementById('profile-modal'); if (pm) pm.classList.remove('hidden');
+          };
         }
       } else {
         if (userBtn) {
@@ -224,8 +293,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let recaptcha;
       try {
-        const ta = loginForm?.querySelector('textarea.g-recaptcha-response');
-        recaptcha = ta && ta.value ? ta.value : undefined;
+        const gre = getGre();
+        if (gre && loginRecaptchaId !== null) {
+          recaptcha = gre.getResponse(loginRecaptchaId);
+        }
+        if (!recaptcha) {
+          const ta = loginForm?.querySelector('textarea.g-recaptcha-response');
+          recaptcha = ta && ta.value ? ta.value : undefined;
+        }
       } catch {}
 
       await fetchJSON('/api/v1/auth/login', {
@@ -234,11 +309,23 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       closeAuth();
       refreshUser();
+      // Si es administrador, redirigir al panel de ventas (/admin)
+      try {
+        const adm = await fetchJSON('/api/v1/admin/check');
+        if (adm && adm.admin) {
+          window.location.href = '/admin';
+          return;
+        }
+      } catch {}
+      // reset para siguientes intentos
+      resetRecaptcha(loginRecaptchaId);
     } catch (err) {
       if (loginError) {
         const msg = err && err.message ? err.message : 'Credenciales inválidas';
         loginError.textContent = msg;
         loginError.classList.remove('hidden');
+        // permitir reintento
+        resetRecaptcha(loginRecaptchaId);
 
         // Si requiere verificación, muestra botón para reenviar el correo
         if (/verificar/i.test(msg) && /correo/i.test(msg)) {
@@ -297,8 +384,14 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       let recaptcha;
       try {
-        const ta = registerForm?.querySelector('textarea.g-recaptcha-response');
-        recaptcha = ta && ta.value ? ta.value : undefined;
+        const gre = getGre();
+        if (gre && registerRecaptchaId !== null) {
+          recaptcha = gre.getResponse(registerRecaptchaId);
+        }
+        if (!recaptcha) {
+          const ta = registerForm?.querySelector('textarea.g-recaptcha-response');
+          recaptcha = ta && ta.value ? ta.value : undefined;
+        }
       } catch {}
       const resp = await fetchJSON('/api/v1/auth/register', {
         method: 'POST',
@@ -310,16 +403,20 @@ document.addEventListener('DOMContentLoaded', () => {
         showLoginTab();
         setTimeout(() => { /* opcional: cerrar modal */ }, 1200);
       }
+      // reset tras envío
+      resetRecaptcha(registerRecaptchaId);
     } catch (err) {
       if (registerErr) { registerErr.textContent = err.message || 'No se pudo registrar.'; registerErr.classList.remove('hidden'); }
+      // permitir reintento
+      resetRecaptcha(registerRecaptchaId);
     }
   });
 
   // ==========================
   // Carrito
   // ==========================
-  function openCart()  { drawer?.classList.add('open'); backdrop?.classList.remove('hidden'); }
-  function closeCart() { drawer?.classList.remove('open'); backdrop?.classList.add('hidden'); }
+  function openCart()  { drawer?.classList.add('open'); backdrop?.classList.remove('hidden'); try{ document.body.classList.add('drawer-open'); }catch(_){} }
+  function closeCart() { drawer?.classList.remove('open'); backdrop?.classList.add('hidden'); try{ document.body.classList.remove('drawer-open'); }catch(_){} }
   cartBtn?.addEventListener('click', openCart);
   drawerClose?.addEventListener('click', closeCart);
   backdrop?.addEventListener('click', closeCart);
@@ -403,65 +500,157 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  drawerBuy?.addEventListener('click', async () => {
-    const { items, total } = await getCartSnapshot();
-    if (!items.length || total <= 0) return;
+  // ==== Checkout con formulario dentro del drawer ====
+  function renderCheckoutForm(items, total) {
+    const count = items.reduce((s, it) => s + (it.cantidad || 0), 0);
+    return `
+      <form id="checkout-form" class="checkout-form">
+        <h3>Finalizar compra</h3>
+        <p class="muted">${count} artículo(s) — Total: <strong>${fmtQ(total)}</strong></p>
 
-    // Requiere login: si no autenticado, abrir modal de auth
-    try {
-      const me = await fetchJSON('/api/v1/auth/me');
-      if (!me?.authenticated) {
-        try { closeCart(); } catch {}
-        if (typeof openAuth === 'function') { openAuth(); }
-        else {
-          // fallback: mostrar mensaje
-          showStatus('Inicia sesión para continuar con la compra.', true);
-          setTimeout(hideStatus, 2000);
+        <section>
+          <h4>Método de pago</h4>
+          <label class="radio"><input type="radio" name="pago" value="stripe" checked> Tarjeta (Stripe)</label>
+          <label class="radio"><input type="radio" name="pago" value="paypal"> PayPal</label>
+        </section>
+
+        <section>
+          <h4>Entrega</h4>
+          <label class="radio"><input type="radio" name="entrega" value="domicilio" checked> Entrega a domicilio</label>
+          <label class="radio"><input type="radio" name="entrega" value="recoger"> Recoger en tienda</label>
+          <div>
+            <input type="text" id="entrega-nombre" placeholder="Nombre completo" required>
+          </div>
+          <div id="entrega-dirblock" class="entrega-datos">
+            <input type="tel" id="entrega-telefono" placeholder="Teléfono">
+            <textarea id="entrega-direccion" placeholder="Dirección completa" rows="2" required></textarea>
+          </div>
+        </section>
+
+        <section>
+          <h4>Datos de factura</h4>
+          <div class="grid2">
+            <input type="text" id="fact-nit" placeholder="NIT (C/F por defecto)" value="C/F" required>
+            <input type="email" id="fact-email" placeholder="Email (opcional)">
+          </div>
+        </section>
+
+        <div class="checkout-actions">
+          <button type="button" id="checkout-cancel" class="btn-secondary">Volver al carrito</button>
+          <button type="submit" id="checkout-submit" class="btn-primary">Confirmar y pagar</button>
+        </div>
+      </form>
+    `;
+  }
+
+  async function openCheckoutForm() {
+    const snap = await getCartSnapshot();
+    if (!snap.items.length || snap.total <= 0) return;
+    if (drawerBody) drawerBody.innerHTML = renderCheckoutForm(snap.items, snap.total);
+    // Ocultar acciones del footer durante checkout
+    try { drawerBuy.style.display = 'none'; } catch {}
+    try { drawerClear.style.display = 'none'; } catch {}
+
+    // Toggle dirección según entrega
+    const entregaDir = document.getElementById('entrega-dirblock');
+    const nombreInput = document.getElementById('entrega-nombre');
+    drawerBody?.querySelectorAll('input[name="entrega"]').forEach(r => {
+      r.addEventListener('change', () => {
+        const val = drawerBody.querySelector('input[name="entrega"]:checked')?.value;
+        if (val === 'recoger') {
+          entregaDir?.classList.add('hidden');
+          try { document.getElementById('entrega-direccion').required = false; } catch {}
+        } else {
+          entregaDir?.classList.remove('hidden');
+          try { document.getElementById('entrega-direccion').required = true; } catch {}
         }
-        return;
-      }
-    } catch (e) {
-      // si no podemos verificar, pedimos login por seguridad
-      try { closeCart(); } catch {}
-      if (typeof openAuth === 'function') { openAuth(); }
-      return;
-    }
+        try { if (nombreInput) nombreInput.required = true; } catch {}
+      });
+    });
 
-    // Elección simple sin SDKs: prompt
-    let metodo = (window.prompt('Método de pago: stripe | paypal', 'stripe') || '').trim().toLowerCase();
-    if (metodo !== 'stripe' && metodo !== 'paypal') {
-      showStatus('Método inválido. Usa "stripe" o "paypal".', true);
-      setTimeout(hideStatus, 1800);
-      return;
-    }
+    // Cancelar
+    const cancelBtn = document.getElementById('checkout-cancel');
+    cancelBtn?.addEventListener('click', () => exitCheckoutForm());
 
-    try {
-      showStatus('Procesando pago...', false);
-      if (metodo === 'stripe') {
-        const resp = await crearPaymentIntentStripe(total);
-        if (!resp?.clientSecret) throw new Error('No se obtuvo clientSecret');
-        const email = window.prompt('Email para la factura (opcional)') || undefined;
-        await crearFacturaLocal(items, email);
+    // Submit
+    const form = document.getElementById('checkout-form');
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const metodo = drawerBody.querySelector('input[name="pago"]:checked')?.value || 'stripe';
+      const entrega = drawerBody.querySelector('input[name="entrega"]:checked')?.value || 'domicilio';
+      const nit = (document.getElementById('fact-nit')?.value || 'C/F').trim() || 'C/F';
+      const email = (document.getElementById('fact-email')?.value || '').trim() || undefined;
+      const entregaPayload = (function(){
+        const base = { metodo: entrega, nombre: document.getElementById('entrega-nombre')?.value || undefined };
+        if (entrega === 'domicilio') {
+          base.telefono = document.getElementById('entrega-telefono')?.value || undefined;
+          base.direccion = document.getElementById('entrega-direccion')?.value || undefined;
+        }
+        return base;
+      })();
+      try {
+        showStatus('Procesando pago...', false);
+        if (metodo === 'stripe') {
+          const resp = await crearPaymentIntentStripe(snap.total);
+          if (!resp?.clientSecret) throw new Error('No se obtuvo clientSecret');
+        } else {
+          const resp = await crearOrderPayPal(snap.total, 'GTQ');
+          const approveUrl = resp?.approveUrl; if (approveUrl) window.open(approveUrl, '_blank');
+        }
+        // Crear factura local (incluye nit y metadatos básicos)
+        const inv = await crearFacturaLocal(snap.items, email, nit, entregaPayload, metodo);
         await fetchJSON('/api/v1/cart/clear', { method: 'POST' });
         await loadCart();
-        showStatus('Stripe OK (simulado). Factura creada. Revisa consola.', false);
-      } else {
-        const resp = await crearOrderPayPal(total, 'GTQ');
-        const approveUrl = resp?.approveUrl;
-        const email = window.prompt('Email para la factura (opcional)') || undefined;
-        await crearFacturaLocal(items, email);
-        await fetchJSON('/api/v1/cart/clear', { method: 'POST' });
-        await loadCart();
-        if (approveUrl) window.open(approveUrl, '_blank');
-        showStatus('PayPal OK (simulado). Factura creada. Revisa consola.', false);
+        // Mostrar acciones de post-compra dentro del drawer
+        if (drawerBody) {
+          const fid = inv && inv.id ? inv.id : null;
+          const printUrl = fid ? `/api/v1/facturas/print/${fid}` : null;
+          drawerBody.innerHTML = `
+            <div class="checkout-success">
+              <h3>¡Compra completada!</h3>
+              <p class="muted">Factura <strong>${(inv && inv.numero_factura) ? inv.numero_factura : ''}</strong> — Total <strong>${fmtQ(inv && inv.total ? inv.total : snap.total)}</strong></p>
+              <div class="checkout-actions">
+                <button id="success-close" class="btn-secondary">Cerrar</button>
+                <button id="success-json" class="btn-secondary">Descargar JSON</button>
+                <button id="success-print" class="btn-primary">Imprimir / PDF</button>
+              </div>
+            </div>`;
+          const btnClose = document.getElementById('success-close');
+          const btnJson = document.getElementById('success-json');
+          const btnPrint = document.getElementById('success-print');
+          btnClose?.addEventListener('click', () => { exitCheckoutForm(); });
+          btnJson?.addEventListener('click', async () => {
+            try {
+              const snapshot = JSON.parse(localStorage.getItem('lastInvoice')||'null') || inv || {};
+              const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = `${(inv && inv.numero_factura) ? inv.numero_factura : 'factura'}.json`;
+              document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 300);
+            } catch {}
+          });
+          btnPrint?.addEventListener('click', () => { if (printUrl) window.open(printUrl, '_blank'); });
+        }
+        // Restaurar acciones del footer
+        try { drawerBuy.style.display = ''; } catch {}
+        try { drawerClear.style.display = ''; } catch {}
+        showStatus('Compra completada. Factura creada.', false);
+        setTimeout(hideStatus, 4500);
+      } catch (err) {
+        console.error('Checkout error:', err);
+        showStatus(err?.message || 'Error en el checkout.', true);
+        setTimeout(hideStatus, 2500);
       }
-      setTimeout(hideStatus, 2500);
-    } catch (err) {
-      console.error('Checkout error:', err);
-      showStatus(err?.message || 'Error en el checkout.', true);
-      setTimeout(hideStatus, 2500);
-    }
-  });
+    });
+  }
+
+  function exitCheckoutForm() {
+    try { drawerBuy.style.display = ''; } catch {}
+    try { drawerClear.style.display = ''; } catch {}
+    loadCart();
+  }
+
+  drawerBuy?.addEventListener('click', async () => { openCheckoutForm(); });
 
   // Delegación: click en “Añadir”
   document.addEventListener('click', async (e) => {
@@ -521,13 +710,42 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('PayPal order:', data);
     return data;
   }
-  async function crearFacturaLocal(items, email) {
-    const payload = { items: Array.isArray(items) ? items : [], email };
+  async function crearFacturaLocal(items, email, nit, entrega, pagoMetodo) {
+    const payload = {
+      items: Array.isArray(items) ? items : [],
+      email,
+      nit,
+      entrega: entrega || undefined,
+      pago: pagoMetodo ? { metodo: pagoMetodo } : undefined,
+    };
     const data = await fetchJSON('/api/v1/facturas', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
     console.log('Factura creada:', data);
+    try {
+      const snapshot = {
+        factura: data,
+        items: items,
+        nit,
+        email,
+        entrega: entrega || null,
+        pago: pagoMetodo ? { metodo: pagoMetodo } : null,
+        createdAt: new Date().toISOString(),
+      };
+      localStorage.setItem('lastInvoice', JSON.stringify(snapshot));
+      // Descargar JSON de la factura si el usuario no quiere correo
+      if (!email) {
+        const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        const num = (data && data.numero_factura) ? data.numero_factura : 'factura';
+        a.download = `${num}.json`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+      }
+    } catch {}
     return data;
   }
 
@@ -537,8 +755,8 @@ document.addEventListener('DOMContentLoaded', () => {
       method: 'POST',
       body: JSON.stringify(body)
     });
-    console.log('ChatGPT:', data);
-    return data?.respuesta;
+    console.log('Assistant:', data);
+    return data?.message || data?.respuesta;
   }
 
   // Exponer helpers para pruebas desde consola del navegador
@@ -549,8 +767,69 @@ document.addEventListener('DOMContentLoaded', () => {
   window.crearFacturaLocal = crearFacturaLocal;
   window.enviarChatGPT = enviarChatGPT;
 });
+  const profileOrdersState = { page: 1, from: '', to: '', total: 0, email: '' };
+  async function loadUserOrders(email, { append = false } = {}){
+    const wrap = document.getElementById('profile-orders');
+    const moreBtn = document.getElementById('orders-more-btn');
+    const fromInput = document.getElementById('orders-from-date');
+    const toInput = document.getElementById('orders-to-date');
+    if (!wrap) return;
+    profileOrdersState.email = email || profileOrdersState.email || '';
+    const from = (fromInput?.value || profileOrdersState.from || '').trim();
+    const to = (toInput?.value || profileOrdersState.to || '').trim();
+    const page = append ? (profileOrdersState.page + 1) : 1;
+    if (!append) wrap.innerHTML = '<div class="muted">Cargando compras...</div>';
+    try {
+      const params = new URLSearchParams();
+      params.set('email', profileOrdersState.email);
+      params.set('limit', '10');
+      params.set('page', String(page));
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      const res = await fetchJSON(`/api/v1/facturas?${params.toString()}`);
+      const items = (res && res.items) || [];
+      profileOrdersState.page = page;
+      profileOrdersState.total = (res && res.total) || 0;
+      profileOrdersState.from = from; profileOrdersState.to = to;
+      const html = items.map(it => `
+        <div class="order-item" style="border:1px solid var(--border-color);border-radius:8px;padding:.5rem;display:flex;justify-content:space-between;align-items:center;gap:.5rem;">
+          <div>
+            <div><strong>${it.numero_factura || ''}</strong></div>
+            <div class="muted">${(it.fecha||'').replace('T',' ').substring(0,16)} · ${it.pago_metodo || '-'} · Total ${fmtQ(it.total||0)}</div>
+          </div>
+          <div style="display:flex;gap:.4rem;white-space:nowrap;">
+            <a class="btn-secondary" href="${it.print_url}" target="_blank">Imprimir/PDF</a>
+            <button class="btn-secondary order-json" data-fid="${it.id}">JSON</button>
+          </div>
+        </div>`).join('');
+      if (append) wrap.insertAdjacentHTML('beforeend', html); else wrap.innerHTML = html || '<div class="muted">No tienes compras registradas.</div>';
+      wrap.querySelectorAll('.order-json').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const fid = btn.getAttribute('data-fid');
+          try {
+            const inv = await fetchJSON(`/api/v1/facturas/${encodeURIComponent(fid)}`);
+            const blob = new Blob([JSON.stringify(inv, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            const num = (inv && inv.numero_factura) ? inv.numero_factura : `factura_${fid}`;
+            a.download = `${num}.json`;
+            document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 300);
+          } catch(e){}
+        });
+      });
+      // Toggle 'Ver más'
+      if (moreBtn) {
+        const loaded = profileOrdersState.page * 10;
+        moreBtn.style.display = (loaded < profileOrdersState.total) ? '' : 'none';
+        moreBtn.onclick = () => loadUserOrders(profileOrdersState.email, { append: true });
+      }
+    } catch(e) {
+      wrap.innerHTML = '<div class="error">No se pudieron cargar las compras.</div>';
+      if (moreBtn) moreBtn.style.display = 'none';
+    }
+  }
 
-
-
-
-
+  // Filtro de fechas en perfil
+  document.getElementById('orders-filter-btn')?.addEventListener('click', async () => {
+    await loadUserOrders(profileOrdersState.email, { append: false });
+  });

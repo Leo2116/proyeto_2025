@@ -1,0 +1,84 @@
+### Auth
+POST http://127.0.0.1:5000/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "nombre": "Test",
+  "email": "test@example.com",
+  "password": "secret123"
+}
+
+### Login
+POST http://127.0.0.1:5000/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "secret123"
+}
+
+### Me
+GET http://127.0.0.1:5000/api/v1/auth/me
+Authorization: Bearer {{access_token}}
+
+### Refresh
+POST http://127.0.0.1:5000/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh_token": "{{refresh_token}}"
+}
+
+### Catalogo list
+GET http://127.0.0.1:5000/api/v1/catalogo/productos?q=biblia&limit=6&page=1&orden=precio_desc
+
+### Catalogo detalle
+GET http://127.0.0.1:5000/api/v1/catalogo/productos/UTIL001
+
+### Google Books search
+GET http://127.0.0.1:5000/api/v1/catalogo/books/search?q=python&limit=5
+
+### Carrito (JWT)
+GET http://127.0.0.1:5000/api/v1/carrito/
+Authorization: Bearer {{access_token}}
+
+### Add item
+POST http://127.0.0.1:5000/api/v1/carrito/items
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "id": "cuaderno",
+  "nombre": "Cuaderno",
+  "precio": 18,
+  "cantidad": 2,
+  "portada_url": "/static/img/productos/cuaderno.png"
+}
+
+### Checkout
+POST http://127.0.0.1:5000/api/v1/pedidos/checkout
+Authorization: Bearer {{access_token}}
+Idempotency-Key: abc-123
+Content-Type: application/json
+
+{}
+
+### Stripe PI
+POST http://127.0.0.1:5000/api/v1/payments/stripe/create-payment-intent
+Content-Type: application/json
+
+{
+  "pedido_id": 1
+}
+
+### Facturas listar
+GET http://127.0.0.1:5000/api/v1/facturas?page=1&limit=5
+Authorization: Bearer {{access_token}}
+
+### IA chat
+POST http://127.0.0.1:5000/api/v1/ia/chat
+Content-Type: application/json
+
+{
+  "mensaje": "Quiero un cuaderno y un lápiz"
+}

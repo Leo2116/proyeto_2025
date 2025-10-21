@@ -8,6 +8,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <!-- Iconos Phosphor -->
     <script src="https://unpkg.com/phosphor-icons"></script>
+    <script>
+      // Inicializa tema sin parpadeo
+      try {
+        const t = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', t || (prefersDark ? 'dark' : 'light'));
+      } catch (e) {}
+    </script>
     <style>
         /* Estilos especificos para la pagina de detalle */
         .detail-container {
@@ -124,6 +132,7 @@
             <span class="logo-text">Librería GT</span>
         </a>
         <div class="header-icons">
+            <button id="theme-btn" class="icon-btn" aria-label="Tema" title="Cambiar tema"><i class="ph-moon"></i></button>
             <!-- No hay boton de busqueda en detalle, solo carrito y usuario -->
             <button><i class="ph-shopping-cart"></i></button>
             <button><i class="ph-user"></i></button>
@@ -168,6 +177,21 @@
     </footer>
 
     <script>
+        // Toggle de tema similar al home
+        (function(){
+          const btn = document.getElementById('theme-btn');
+          if(!btn) return;
+          function setTheme(t){
+            const theme = t==='dark' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', theme);
+            try { localStorage.setItem('theme', theme); } catch(e) {}
+            btn.innerHTML = theme==='dark' ? '<i class="ph-sun"></i>' : '<i class="ph-moon"></i>';
+            btn.title = theme==='dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
+          }
+          const current = document.documentElement.getAttribute('data-theme') || 'light';
+          setTheme(current);
+          btn.addEventListener('click', ()=> setTheme((document.documentElement.getAttribute('data-theme')==='dark')?'light':'dark'));
+        })();
         // Lógica JavaScript para cargar el producto
         document.addEventListener('DOMContentLoaded', () => {
             const API_BASE = '/api/v1/catalogo/productos/';

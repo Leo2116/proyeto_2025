@@ -5,7 +5,6 @@ import os
 import requests
 
 # Importamos las clases de Caso de Uso
-# Asumimos que generarás estos archivos pronto para que esto funcione
 from servicios.servicio_autenticacion.aplicacion.casos_uso.registrar_usuario import RegistrarUsuario
 from servicios.servicio_autenticacion.aplicacion.casos_uso.iniciar_sesion import IniciarSesion
 from servicios.servicio_autenticacion.aplicacion.casos_uso.enviar_verificacion_correo import EnviarVerificacionCorreo
@@ -14,17 +13,21 @@ from servicios.servicio_autenticacion.aplicacion.casos_uso.enviar_verificacion_c
 from servicios.servicio_autenticacion.infraestructura.persistencia.sqlite_repositorio_usuario import SQLiteRepositorioUsuario
 from servicios.servicio_autenticacion.infraestructura.clientes_externos.google_smtp_cliente import GoogleSMTPCliente
 from configuracion import Config
+from utils.jwt import create_jwt
 from passlib.hash import pbkdf2_sha256 as pwd_context
 
+# Enterprise helper (opcional)
+from servicios.servicio_autenticacion.presentacion.recaptcha_enterprise import verify_enterprise
+
 # ----------------------------------------------------------------------
-# INICIALIZACIÓN Y BLUEPRINT
+# INICIALIZACION Y BLUEPRINT
 # ----------------------------------------------------------------------
 
 # Creamos el Blueprint para agrupar las rutas de autenticacion
 auth_bp = Blueprint('auth_bp', __name__, url_prefix='/api/v1/auth')
 
 # ----------------------------------------------------------------------
-# CONFIGURACIÓN DE CASOS DE USO E INFRAESTRUCTURA
+# CONFIGURACION DE CASOS DE USO E INFRAESTRUCTURA
 # ----------------------------------------------------------------------
 # Se inicializa el Repositorio de Infraestructura
 repositorio_usuario = SQLiteRepositorioUsuario()
@@ -41,42 +44,63 @@ iniciar_sesion_uc = IniciarSesion(
 
 
 # ----------------------------------------------------------------------
-# RUTAS DE AUTENTICACIÓN
+# RUTAS DE AUTENTICACION
 # ----------------------------------------------------------------------
+
+def _enterprise_enabled():
+    try:
+        flag = os.getenv('RECAPTCHA_ENTERPRISE') or getattr(Config, 'RECAPTCHA_ENTERPRISE', None)
+        return bool(flag) and str(flag).lower() in ('1', 'true', 'yes')
+    except Exception:
+        return False
+
 
 def _registrar_impl():
     """Ruta para registrar un nuevo usuario."""
-    data = request.get_json()
+    data = request.get_json() or {}
 
     nombre = data.get('nombre')
     email = data.get('email')
     password = data.get('password')
-    # reCAPTCHA v2 (si está configurado)
+    # reCAPTCHA (v2 o Enterprise)
     recaptcha_token = data.get('recaptcha') or data.get('g_recaptcha_response') or data.get('g-recaptcha-response')
-    secret = os.getenv('RECAPTCHA_SECRET_KEY') or getattr(Config, 'RECAPTCHA_SECRET_KEY', None)
 
     if not all([nombre, email, password]):
         return jsonify({"error": "Faltan campos requeridos (nombre, email, password)."}), 400
 
-    # Validación reCAPTCHA si hay SECRET configurado
-    if secret:
-        if not recaptcha_token:
-            return jsonify({"error": "Falta verificación reCAPTCHA."}), 400
-        try:
-            r = requests.post(
-                'https://www.google.com/recaptcha/api/siteverify',
-                data={'secret': secret, 'response': recaptcha_token},
-                timeout=10
-            )
-            ok = (r.json() or {}).get('success', False)
-            if not ok:
-                return jsonify({"error": "reCAPTCHA inválido."}), 400
-        except Exception:
-            return jsonify({"error": "No se pudo verificar reCAPTCHA."}), 502
+    # Enterprise primero si está activado
+    if _enterprise_enabled():
+        ok, msg = verify_enterprise(
+            recaptcha_token,
+            action=(getattr(Config, 'RECAPTCHA_ACTION_REGISTER', None) or 'register'),
+            request_obj=request
+        )
+        if not ok:
+            return jsonify({"error": msg}), (502 if 'No se pudo verificar' in (msg or '') else 400)
+    else:
+        # Validación reCAPTCHA v2 si hay SECRET configurado
+        secret = os.getenv('RECAPTCHA_SECRET_KEY') or getattr(Config, 'RECAPTCHA_SECRET_KEY', None)
+        if secret:
+            if not recaptcha_token:
+                return jsonify({"error": "Falta verificación reCAPTCHA."}), 400
+            try:
+                r = requests.post(
+                    'https://www.google.com/recaptcha/api/siteverify',
+                    data={'secret': secret, 'response': recaptcha_token, 'remoteip': request.headers.get('X-Forwarded-For', request.remote_addr)},
+                    timeout=10
+                )
+                jr = (r.json() or {})
+                ok = jr.get('success', False)
+                if not ok:
+                    return jsonify({"error": "reCAPTCHA inválido."}), 400
+            except Exception:
+                return jsonify({"error": "No se pudo verificar reCAPTCHA."}), 502
 
     try:
-        # 1) Crear usuario
-        usuario = registrar_usuario_uc.ejecutar(nombre=nombre, email=email, password=password)
+        # 1) Crear usuario (marcar admin si su email está en ADMIN_EMAILS)
+        admin_list = set((getattr(Config, 'ADMIN_EMAILS', []) or []))
+        es_admin_flag = str(email or '').strip().lower() in admin_list
+        usuario = registrar_usuario_uc.ejecutar(nombre=nombre, email=email, password=password, es_admin=es_admin_flag)
 
         # 2) Enviar verificación por correo (no bloquea el registro si falla)
         try:
@@ -90,12 +114,13 @@ def _registrar_impl():
         return jsonify({
             "mensaje": "Usuario registrado exitosamente.",
             "id_usuario": usuario.id_usuario,
-            "email": usuario.email
+            "email": usuario.email,
+            "is_admin": bool(getattr(usuario, 'es_admin', False))
         }), 201
 
     except ValueError as e:
-        # Manejo de errores de validacion (ej: email ya existe)
-        return jsonify({"error": str(e)}), 409 # Conflicto
+        # Manejo de errores de validación (ej: email ya existe)
+        return jsonify({"error": str(e)}), 409  # Conflicto
 
     except Exception:
         # Manejo de errores internos (ej: error de base de datos)
@@ -114,32 +139,43 @@ def register():
 @auth_bp.route('/login', methods=['POST'])
 def login():
     """Ruta para iniciar sesion y obtener un token (mock de JWT)."""
-    data = request.get_json()
-    
+    data = request.get_json() or {}
+
     email = data.get('email')
     password = data.get('password')
-    # reCAPTCHA v2 (si está configurado)
+    # reCAPTCHA (v2 o Enterprise)
     recaptcha_token = data.get('recaptcha') or data.get('g_recaptcha_response') or data.get('g-recaptcha-response')
-    secret = os.getenv('RECAPTCHA_SECRET_KEY') or getattr(Config, 'RECAPTCHA_SECRET_KEY', None)
 
     if not all([email, password]):
         return jsonify({"error": "Faltan campos requeridos (email, password)."}), 400
 
-    # Validación reCAPTCHA si hay SECRET configurado
-    if secret:
-        if not recaptcha_token:
-            return jsonify({"error": "Falta verificación reCAPTCHA."}), 400
-        try:
-            r = requests.post(
-                'https://www.google.com/recaptcha/api/siteverify',
-                data={'secret': secret, 'response': recaptcha_token},
-                timeout=10
-            )
-            ok = (r.json() or {}).get('success', False)
-            if not ok:
-                return jsonify({"error": "reCAPTCHA inválido."}), 400
-        except Exception:
-            return jsonify({"error": "No se pudo verificar reCAPTCHA."}), 502
+    # Enterprise primero si está activado
+    if _enterprise_enabled():
+        ok, msg = verify_enterprise(
+            recaptcha_token,
+            action=(getattr(Config, 'RECAPTCHA_ACTION_LOGIN', None) or 'login'),
+            request_obj=request
+        )
+        if not ok:
+            return jsonify({"error": msg}), (502 if 'No se pudo verificar' in (msg or '') else 400)
+    else:
+        # Validación reCAPTCHA v2 si hay SECRET configurado
+        secret = os.getenv('RECAPTCHA_SECRET_KEY') or getattr(Config, 'RECAPTCHA_SECRET_KEY', None)
+        if secret:
+            if not recaptcha_token:
+                return jsonify({"error": "Falta verificación reCAPTCHA."}), 400
+            try:
+                r = requests.post(
+                    'https://www.google.com/recaptcha/api/siteverify',
+                    data={'secret': secret, 'response': recaptcha_token, 'remoteip': request.headers.get('X-Forwarded-For', request.remote_addr)},
+                    timeout=10
+                )
+                jr = (r.json() or {})
+                ok = jr.get('success', False)
+                if not ok:
+                    return jsonify({"error": "reCAPTCHA inválido."}), 400
+            except Exception:
+                return jsonify({"error": "No se pudo verificar reCAPTCHA."}), 502
 
     try:
         # 1) Verificar credenciales
@@ -154,18 +190,36 @@ def login():
         session['user_email'] = usuario.email
         session['user_nombre'] = usuario.nombre
 
+        # 4) Crear token tipo JWT (HS256) incluyendo is_admin
+        admin_list = set((getattr(Config, 'ADMIN_EMAILS', []) or []))
+        is_admin = bool(getattr(usuario, 'es_admin', False)) or (str(usuario.email).lower() in admin_list)
+        token = create_jwt(
+            {
+                "sub": usuario.id_usuario,
+                "email": usuario.email,
+                "nombre": usuario.nombre,
+                "is_admin": bool(is_admin),
+            },
+            secret=getattr(Config, 'SECRET_KEY', ''),
+            expires_in=3600,
+        )
+
         return jsonify({
             "mensaje": "Inicio de sesion exitoso.",
             "user": {
                 "id": usuario.id_usuario,
                 "email": usuario.email,
-                "nombre": usuario.nombre
-            }
+                "nombre": usuario.nombre,
+                "is_admin": bool(is_admin),
+            },
+            "access_token": token,
+            "token_type": "Bearer",
+            "expires_in": 3600
         }), 200
 
     except ValueError as e:
         # Manejo de errores de credenciales (ej: email o password incorrectos)
-        return jsonify({"error": str(e)}), 401 # No autorizado
+        return jsonify({"error": str(e)}), 401  # No autorizado
 
     except Exception:
         # Manejo de errores internos
@@ -214,3 +268,35 @@ def logout():
     session.pop('user_email', None)
     session.pop('user_nombre', None)
     return jsonify({"ok": True}), 200
+
+
+@auth_bp.route('/resend-verification', methods=['POST'])
+def resend_verification():
+    """Reenvía el correo de verificación al usuario especificado por email o al usuario en sesión."""
+    data = request.get_json(silent=True) or {}
+    email = (data.get('email') or session.get('user_email') or '').strip()
+    if not email:
+        return jsonify({"error": "Email requerido para reenviar verificación."}), 400
+
+    try:
+        # Buscar usuario por email
+        usuario = repositorio_usuario.obtener_por_email(email)
+        if not usuario:
+            return jsonify({"error": "Usuario no encontrado para ese email."}), 404
+        # Si ya está verificado, informar y salir
+        if repositorio_usuario.email_verificado(email):
+            return jsonify({"ok": True, "mensaje": "La cuenta ya está verificada."}), 200
+
+        # Enviar correo de verificación
+        servicio_correo = GoogleSMTPCliente()
+        try:
+            from servicios.servicio_autenticacion.aplicacion.casos_uso.enviar_verificacion_correo import EnviarVerificacionCorreo
+            enviar_verif_uc = EnviarVerificacionCorreo(repositorio_usuario, servicio_correo)
+            enviar_verif_uc.ejecutar(usuario.id_usuario, email=email)
+        except Exception as e:
+            # Error controlado al enviar
+            return jsonify({"error": f"No se pudo enviar verificación: {str(e)}"}), 502
+
+        return jsonify({"ok": True, "mensaje": "Correo de verificación reenviado (revisa SPAM)."}), 200
+    except Exception:
+        return jsonify({"error": "Error interno al reintentar verificación."}), 500

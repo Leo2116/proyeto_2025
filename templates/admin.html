@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin | Librería</title>
   <link href="/static/css/style.css" rel="stylesheet" />
+  <script>
+    // Inicializa el tema lo antes posible para evitar parpadeo
+    try {
+      const t = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', t || (prefersDark ? 'dark' : 'light'));
+    } catch (e) {}
+  </script>
+  <script src="https://unpkg.com/phosphor-icons"></script>
   <style>
     .admin-wrap { width: min(1100px, 96%); margin: 1rem auto; display: grid; gap: 1rem; }
     .admin-card { background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem; box-shadow: var(--shadow); }
@@ -17,19 +26,20 @@
     .muted { color: #6b7280; }
     .row-actions { display:flex; gap:.35rem; }
     .pill { font-size: .8rem; padding: .1rem .4rem; border-radius: 999px; background: var(--secondary-bg);}
+    /* Botón flotante de tema en Admin */
+    .theme-fab { position: fixed; top: 12px; right: 12px; z-index: 1300; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 999px; padding: 8px; box-shadow: var(--shadow); cursor: pointer; }
+    .theme-fab i { font-size: 1.2rem; color: var(--text-color); }
   </style>
 </head>
 <body>
+  <button id="theme-btn" class="theme-fab" title="Cambiar tema" aria-label="Tema"><i class="ph-moon"></i></button>
   <div class="admin-wrap">
     <h1>Administración de productos</h1>
 
     <section class="admin-card">
       <h2 style="margin-bottom:.5rem;">Nuevo / Editar producto</h2>
       <div class="admin-grid">
-        <div>
-          <label>ID (opcional)</label>
-          <input id="p-id" type="text" placeholder="si se omite se genera desde el nombre" />
-        </div>
+        <input id="p-id" type="hidden" />
         <div>
           <label>Nombre</label>
           <input id="p-nombre" type="text" required />
@@ -45,6 +55,47 @@
             <option>Libro</option>
             <option>UtilEscolar</option>
           </select>
+        </div>
+        <!-- Campos específicos dinámicos por tipo -->
+        <div id="fields-libro" style="display:none; grid-column: 1 / -1;">
+          <div class="admin-grid" style="grid-template-columns: 1fr 1fr;">
+            <div>
+              <label>Autor</label>
+              <input id="p-autor" type="text" />
+            </div>
+            <div>
+              <label>ISBN</label>
+              <input id="p-isbn" type="text" />
+            </div>
+            <div>
+              <label>Editorial</label>
+              <input id="p-editorial" type="text" />
+            </div>
+            <div>
+              <label>Páginas</label>
+              <input id="p-paginas" type="number" step="1" min="1" />
+            </div>
+          </div>
+        </div>
+        <div id="fields-util" style="display:none; grid-column: 1 / -1;">
+          <div class="admin-grid" style="grid-template-columns: 1fr 1fr;">
+            <div>
+              <label>Marca</label>
+              <input id="p-marca" type="text" />
+            </div>
+            <div>
+              <label>SKU</label>
+              <input id="p-sku" type="text" />
+            </div>
+            <div>
+              <label>Material</label>
+              <input id="p-material" type="text" />
+            </div>
+            <div>
+              <label>Categoría</label>
+              <input id="p-categoria" type="text" />
+            </div>
+          </div>
         </div>
         <div>
           <label>Autor (Libro) / Marca (Útil)</label>
@@ -62,6 +113,10 @@
           <label>URL de portada (opcional)</label>
           <input id="p-portada" type="text" placeholder="/static/img/productos/mi_imagen.png" />
         </div>
+        <div>
+          <label>Stock</label>
+          <input id="p-stock" type="number" step="1" min="0" value="0" />
+        </div>
       </div>
       <div class="admin-actions" style="margin-top:.75rem;">
         <button id="btn-guardar" class="btn-primary">Guardar</button>
@@ -72,6 +127,9 @@
 
     <section class="admin-card">
       <h2 style="margin-bottom:.5rem;">Productos</h2>
+      <div style="margin-bottom:.5rem; display:flex; gap:.5rem; align-items:center;">
+        <label><input type="checkbox" id="include-deleted"> Ver ocultos (eliminados)</label>
+      </div>
       <table class="table">
         <thead>
           <tr>
@@ -79,6 +137,7 @@
             <th>Nombre</th>
             <th>Tipo</th>
             <th>Precio</th>
+            <th>Stock</th>
             <th>Extra</th>
             <th>Acciones</th>
           </tr>
@@ -86,9 +145,105 @@
         <tbody id="admin-tbody"></tbody>
       </table>
     </section>
+
+    <section class="admin-card">
+      <h2 style="margin-bottom:.5rem;">Tickets de soporte</h2>
+      <div style="margin-bottom:.5rem; display:flex; gap:.5rem; align-items:center;">
+        <label>Estado:
+          <select id="tk-status" style="margin-left:.25rem;">
+            <option value="">Todos</option>
+            <option>open</option>
+            <option>assigned</option>
+            <option>resolved</option>
+            <option>closed</option>
+          </select>
+        </label>
+        <button id="tk-refresh" class="btn-secondary">Actualizar</button>
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Pregunta</th>
+            <th>Usuario</th>
+            <th>Estado</th>
+            <th>Asignado a</th>
+            <th>Proveedor</th>
+            <th>Creado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tk-tbody"></tbody>
+      </table>
+      <p id="tk-msg" class="muted" style="margin-top:.5rem;"></p>
+    </section>
+
+    <section class="admin-card">
+      <h2 style="margin-bottom:.5rem;">Registrar venta en tienda</h2>
+      <div class="admin-grid">
+        <div>
+          <label>Producto ID</label>
+          <input id="sv-id" type="text" placeholder="ID del producto" />
+        </div>
+        <div>
+          <label>Cantidad</label>
+          <input id="sv-cantidad" type="number" step="1" min="1" value="1" />
+        </div>
+        <div style="grid-column: 1 / -1;">
+          <button id="sv-add" class="btn-secondary">Agregar a la venta</button>
+        </div>
+        <div style="grid-column: 1 / -1;" id="sv-items" class="muted">Sin items</div>
+        <div>
+          <label>Método de pago</label>
+          <select id="sv-metodo">
+            <option value="efectivo">Efectivo</option>
+            <option value="tarjeta">Tarjeta</option>
+            <option value="paypal">PayPal</option>
+          </select>
+        </div>
+        <div>
+          <label>NIT</label>
+          <input id="sv-nit" type="text" value="C/F" />
+        </div>
+        <div>
+          <label>Email (opcional)</label>
+          <input id="sv-email" type="email" />
+        </div>
+      </div>
+      <div class="admin-actions" style="margin-top:.75rem;">
+        <button id="sv-guardar" class="btn-primary">Guardar venta en tienda</button>
+      </div>
+      <p id="sv-msg" class="muted" style="margin-top:.5rem;"></p>
+    </section>
+
+    <section class="admin-card">
+      <h2 style="margin-bottom:.5rem;">Resumen de ventas</h2>
+      <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
+        <label>Desde:</label><input type="date" id="rep-from" />
+        <label>Hasta:</label><input type="date" id="rep-to" />
+        <button id="rep-calc" class="btn-secondary">Calcular</button>
+      </div>
+      <div id="rep-out" style="margin-top:.75rem; display:grid; gap:.4rem;"></div>
+    </section>
   </div>
 
   <script>
+    // Toggle de tema (claro/oscuro) reutilizable
+    (function(){
+      const btn = document.getElementById('theme-btn');
+      if(!btn) return;
+      function setTheme(t){
+        const theme = t==='dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        try { localStorage.setItem('theme', theme); } catch(e) {}
+        btn.innerHTML = theme==='dark' ? '<i class="ph-sun"></i>' : '<i class="ph-moon"></i>';
+        btn.title = theme==='dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
+      }
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      setTheme(current);
+      btn.addEventListener('click', ()=> setTheme((document.documentElement.getAttribute('data-theme')==='dark')?'light':'dark'));
+    })();
+
     async function fetchJSON(url, opts={}){
       const res = await fetch(url, { headers:{'Content-Type':'application/json'}, credentials:'same-origin', ...opts });
       const data = await res.json().catch(()=>({}));
@@ -101,8 +256,39 @@
     const tid = 'admin-tbody';
 
     function setMsg(t){ const m = $('admin-msg'); if(m){ m.textContent = t || ''; } }
-    function limpiar(){ ['p-id','p-nombre','p-precio','p-autor-marca','p-isbn-sku','p-sinopsis','p-portada'].forEach(id=>{ const el=$(id); if(el) el.value=''; }); $('p-tipo').value='Producto'; }
-    function fillForm(row){ $('p-id').value=row.id||''; $('p-nombre').value=row.nombre||''; $('p-precio').value=row.precio||0; $('p-tipo').value=row.tipo||'Producto'; $('p-autor-marca').value=row.autor_marca||''; $('p-isbn-sku').value=row.isbn_sku||''; $('p-sinopsis').value=row.sinopsis||''; $('p-portada').value=row.portada_url||''; }
+function limpiar(){ ['p-id','p-nombre','p-precio','p-autor','p-isbn','p-editorial','p-paginas','p-marca','p-sku','p-material','p-categoria','p-sinopsis','p-portada'].forEach(id=>{ const el=$(id); if(el) el.value=''; }); $('p-tipo').value='Producto'; showGroups('Producto'); }
+function showGroups(tipo){
+  const libro = document.getElementById('fields-libro');
+  const util = document.getElementById('fields-util');
+  if(tipo==='Libro'){
+    if(libro) libro.style.display='block';
+    if(util) util.style.display='none';
+  } else if(tipo==='UtilEscolar'){
+    if(libro) libro.style.display='none';
+    if(util) util.style.display='block';
+  } else {
+    if(libro) libro.style.display='none';
+    if(util) util.style.display='none';
+  }
+}
+
+function fillForm(row){
+  $('p-id').value=row.id||'';
+  $('p-nombre').value=row.nombre||'';
+  $('p-precio').value=row.precio||0;
+  const tipo = row.tipo||'Producto';
+  $('p-tipo').value=tipo;
+  showGroups(tipo);
+  if(tipo==='Libro'){
+    const autor = document.getElementById('p-autor'); if(autor) autor.value = row.autor_marca||'';
+    const isbn = document.getElementById('p-isbn'); if(isbn) isbn.value = row.isbn_sku||'';
+  } else if(tipo==='UtilEscolar'){
+    const marca = document.getElementById('p-marca'); if(marca) marca.value = row.autor_marca||'';
+    const sku = document.getElementById('p-sku'); if(sku) sku.value = row.isbn_sku||'';
+  }
+  $('p-sinopsis').value=row.sinopsis||'';
+  $('p-portada').value=row.portada_url||'';
+}
 
     function rowHTML(r){
       const extra = (r.tipo==='Libro' ? (r.autor_marca||'-')+' · '+(r.isbn_sku||'-') : r.tipo==='UtilEscolar' ? (r.autor_marca||'-')+' · '+(r.isbn_sku||'-') : '-');
@@ -112,10 +298,12 @@
         + '<td>'+ (r.nombre||'') +'</td>'
         + '<td><span class="pill">'+ (r.tipo||'') +'</span></td>'
         + '<td>Q'+ Number(r.precio||0).toFixed(2) +'</td>'
+        + '<td>'+(r.stock||0)+'</td>'
         + '<td>'+ extra +'</td>'
         + '<td class="row-actions">'
         +   '<button class="btn-secondary btn-edit">Editar</button>'
-        +   '<button class="btn-secondary btn-delete">Eliminar</button>'
+        +   '<button class="btn-secondary btn-stock">+ Stock</button>'
+        +   '<button class="btn-secondary btn-delete">Ocultar</button>'
         + '</td>'
         + '</tr>'
       );
@@ -131,22 +319,82 @@
       }catch(e){ setMsg(e.message); }
     }
 
+    // ------- Tickets -------
+    async function cargarTickets(){
+      const tb = document.getElementById('tk-tbody'); if(!tb) return;
+      const status = document.getElementById('tk-status')?.value || '';
+      const qs = status ? ('?status='+encodeURIComponent(status)) : '';
+      tb.innerHTML = '<tr><td colspan="8" class="muted">Cargando...</td></tr>';
+      try{
+        const data = await fetchJSON('/api/v1/admin/tickets'+qs);
+        if(!Array.isArray(data) || !data.length){ tb.innerHTML = '<tr><td colspan="8" class="muted">Sin tickets</td></tr>'; return; }
+        tb.innerHTML = data.map(t=>{
+          const q = (t.question||'').slice(0,80).replace(/</g,'&lt;');
+          const ce = t.created_at?.replace('T',' ').slice(0,16) || '';
+          return '<tr data-id="'+t.id+'">'
+            + '<td>'+t.id+'</td>'
+            + '<td title="'+(t.question||'').replace(/"/g,'&quot;')+'">'+ q + (q.length>=80?'…':'') +'</td>'
+            + '<td>'+(t.user_email||'-')+'</td>'
+            + '<td>'+ (t.status||'-') +'</td>'
+            + '<td>'+ (t.assigned_to||'-') +'</td>'
+            + '<td>'+ (t.provider||'-') +'</td>'
+            + '<td>'+ (ce) +'</td>'
+            + '<td class="row-actions">'
+            +   '<button class="btn-secondary btn-assign">Asignar</button>'
+            + '</td>'
+          + '</tr>';
+        }).join('');
+        tb.querySelectorAll('.btn-assign').forEach(btn=> btn.onclick = async ()=>{
+          const tr=btn.closest('tr'); const id=tr?.getAttribute('data-id'); if(!id) return;
+          const to = prompt('Asignar a (email o nombre):'); if(!to) return;
+          const pr = prompt('Prioridad (low|normal|high):','normal')||'normal';
+          const notes = prompt('Notas (opcional):')||undefined;
+          try{ await fetchJSON('/api/v1/admin/tickets/'+id+'/assign', { method:'POST', body: JSON.stringify({ assigned_to: to, priority: pr, notes }) }); document.getElementById('tk-msg').textContent='Ticket asignado'; cargarTickets(); }
+          catch(e){ document.getElementById('tk-msg').textContent = e.message; }
+        });
+      }catch(e){ tb.innerHTML = '<tr><td colspan="8" class="muted">Error al cargar tickets</td></tr>'; }
+    }
+
+    // Inicializaciones específicas
+    (function(){
+      try{
+        cargarTabla();
+        cargarTickets();
+        document.getElementById('tk-refresh')?.addEventListener('click', cargarTickets);
+        document.getElementById('tk-status')?.addEventListener('change', cargarTickets);
+      }catch(e){}
+    })();
+
+    // Mostrar/ocultar grupos por tipo al cambiar selección
+    (function(){ const tipoSel = document.getElementById('p-tipo'); if(tipoSel){ tipoSel.addEventListener('change', ()=> showGroups(tipoSel.value)); showGroups(tipoSel.value); } })();
+    // Ocultar campos legacy combinados si aún existen en el DOM
+    (function(){ ['p-autor-marca','p-isbn-sku'].forEach(id=>{ const el = document.getElementById(id); if(el){ const box = el.closest('div'); if(box){ box.style.display='none'; } } }); })();
     $('btn-limpiar').onclick = ()=> limpiar();
     $('btn-guardar').onclick = async ()=>{
       setMsg('');
+      const tipoSel = $('p-tipo').value;
       const payload = {
-        id: $('p-id').value.trim() || undefined,
         nombre: $('p-nombre').value.trim(),
         precio: parseFloat($('p-precio').value || '0'),
-        tipo: $('p-tipo').value,
-        autor_marca: $('p-autor-marca').value.trim() || undefined,
-        isbn_sku: $('p-isbn-sku').value.trim() || undefined,
+        tipo: tipoSel,
+        autor_marca: (tipoSel==='Libro' ? (document.getElementById('p-autor')?.value.trim()||undefined)
+                     : tipoSel==='UtilEscolar' ? (document.getElementById('p-marca')?.value.trim()||undefined)
+                     : undefined),
+        isbn_sku: (tipoSel==='Libro' ? (document.getElementById('p-isbn')?.value.trim()||undefined)
+                   : tipoSel==='UtilEscolar' ? (document.getElementById('p-sku')?.value.trim()||undefined)
+                   : undefined),
+        editorial: (tipoSel==='Libro' ? (document.getElementById('p-editorial')?.value.trim()||undefined) : undefined),
+        paginas: (tipoSel==='Libro' ? (document.getElementById('p-paginas')?.value||undefined) : undefined),
+        material: (tipoSel==='UtilEscolar' ? (document.getElementById('p-material')?.value.trim()||undefined) : undefined),
+        categoria: (tipoSel==='UtilEscolar' ? (document.getElementById('p-categoria')?.value.trim()||undefined) : undefined),
         sinopsis: $('p-sinopsis').value || undefined,
         portada_url: $('p-portada').value || undefined,
+        stock: parseInt((document.getElementById('p-stock')?.value || '0'),10)
       };
       try{
-        if(payload.id){
-          await fetchJSON('/api/v1/admin/productos/'+encodeURIComponent(payload.id), { method:'PUT', body: JSON.stringify(payload) });
+        const editingId = (document.getElementById('p-id')?.value || '').trim();
+        if(editingId){
+          await fetchJSON('/api/v1/admin/productos/'+encodeURIComponent(editingId), { method:'PUT', body: JSON.stringify(payload) });
           setMsg('Actualizado');
         } else {
           await fetchJSON('/api/v1/admin/productos', { method:'POST', body: JSON.stringify(payload) });
@@ -157,15 +405,55 @@
       }catch(e){ setMsg(e.message); }
     };
 
+    // Venta en tienda (simple)
+    const svItems = [];
+    function renderSV(){
+      const host = document.getElementById('sv-items');
+      if(!host) return; if (!svItems.length){ host.textContent='Sin items'; return; }
+      const rows = svItems.map(x=>`<tr><td>${x.id}</td><td>${x.nombre||''}</td><td style=\"text-align:center\">${x.cantidad}</td><td style=\"text-align:right\">Q${Number(x.precio||0).toFixed(2)}</td><td style=\"text-align:right\">Q${Number((x.precio||0)* x.cantidad).toFixed(2)}</td></tr>`).join('');
+      const total = svItems.reduce((s,it)=> s + (Number(it.precio||0)* (it.cantidad||0)), 0);
+      host.innerHTML = `<table class=\"table\"><thead><tr><th>ID</th><th>Nombre</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan=\"4\" style=\"text-align:right\"><strong>Total</strong></td><td style=\"text-align:right\"><strong>Q${total.toFixed(2)}</strong></td></tr></tfoot></table>`;
+    }
+    document.getElementById('sv-add')?.addEventListener('click', async ()=>{
+      const id = document.getElementById('sv-id').value.trim(); const cantidad = parseInt(document.getElementById('sv-cantidad').value||'1',10);
+      if(!id || cantidad<=0) return;
+      try{ const prods = await fetchJSON('/api/v1/admin/productos'); const p = (prods||[]).find(r=>r.id===id); if(!p){ alert('Producto no encontrado'); return; } svItems.push({ id: p.id, nombre: p.nombre, precio: Number(p.precio||0), cantidad }); renderSV(); }catch(e){ alert(e.message); }
+    });
+    document.getElementById('sv-guardar')?.addEventListener('click', async ()=>{
+      const nit = document.getElementById('sv-nit').value.trim()||'C/F'; const email = document.getElementById('sv-email').value.trim()||undefined; const metodo = document.getElementById('sv-metodo').value;
+      if(!svItems.length){ document.getElementById('sv-msg').textContent = 'Agrega al menos un item'; return; }
+      const payload = { items: svItems.map(x=>({ id:x.id, nombre:x.nombre, precio:x.precio, cantidad:x.cantidad })), nit, email, pago:{metodo}, entrega:{metodo:'recoger'}, origen:'tienda' };
+      try{ const res = await fetchJSON('/api/v1/facturas', { method:'POST', body: JSON.stringify(payload) }); document.getElementById('sv-msg').textContent = `Venta guardada. Factura ${res.numero_factura}`; svItems.length=0; renderSV(); }
+      catch(e){ document.getElementById('sv-msg').textContent = e.message; }
+    });
+
+    // Reporte de ventas
+    document.getElementById('rep-calc')?.addEventListener('click', async ()=>{
+      const out = document.getElementById('rep-out'); if(!out) return; out.textContent='Calculando...';
+      const from = document.getElementById('rep-from')?.value || ''; const to = document.getElementById('rep-to')?.value || '';
+      const params = new URLSearchParams(); if(from) params.set('from', from); if(to) params.set('to', to); params.set('page','1'); params.set('limit','50');
+      try{
+        const res = await fetchJSON('/api/v1/facturas?'+params.toString());
+        const items = res.items||[]; const total = items.reduce((s,it)=> s+(Number(it.total)||0),0);
+        const porOrigen = items.reduce((acc,it)=>{ const k=it.origen||'web'; acc[k]=(acc[k]||0)+(Number(it.total)||0); return acc; },{});
+        const porPago = items.reduce((acc,it)=>{ const k=it.pago_metodo||'-'; acc[k]=(acc[k]||0)+(Number(it.total)||0); return acc; },{});
+        function kvToList(obj){ return Object.entries(obj).map(([k,v])=>`<div>- ${k}: Q${Number(v).toFixed(2)}</div>`).join('') || '<div class=\"muted\">(sin datos)</div>'; }
+        out.innerHTML = `
+          <div><strong>Ventas totales:</strong> Q${total.toFixed(2)}</div>
+          <div><strong>Por origen (web/tienda):</strong>${kvToList(porOrigen)}</div>
+          <div><strong>Por método de pago:</strong>${kvToList(porPago)}</div>
+          <div class=\"muted\">Resultados limitados a 50 registros por consulta.</div>`;
+      }catch(e){ out.innerHTML = '<div class=\"error\">No se pudo calcular el reporte.</div>'; }
+    });
+
     // init
     (async function(){
       try {
         const { admin } = await fetchJSON('/api/v1/admin/check');
         if(!admin){ setMsg('No autorizado'); return; }
-        cargarTabla();
+        cargarTabla(); document.getElementById('include-deleted')?.addEventListener('change', cargarTabla);
       } catch(e){ setMsg(e.message); }
     })();
   </script>
 </body>
 </html>
-

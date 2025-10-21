@@ -98,7 +98,7 @@ body {
 }
 .hero-search input {
   border: none; outline: none; background: transparent;
-  padding: 0.9rem 1rem 0.9rem 1.2rem; font-size: 1rem; border-radius: 999px; color: #111;
+  padding: 0.9rem 1rem 0.9rem 1.2rem; font-size: 1rem; border-radius: 999px; color: var(--text-color);
 }
 .hero-search button {
   border: none; outline: none; cursor: pointer; border-radius: 999px;
@@ -372,6 +372,7 @@ body {
    Asistente Virtual (widget flotante)
    ============================================================= */
 .assistant-widget { position: fixed; right: 16px; bottom: 16px; z-index: 1250; }
+.drawer-open .assistant-widget { right: auto; left: 16px; }
 .assistant-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1250; }
 .assistant-toggle {
   width: 48px; height: 48px; border-radius: 999px; border: none; cursor: pointer;
@@ -387,7 +388,16 @@ body {
   z-index: 1251;
 }
 .assistant-header { display: flex; align-items: center; justify-content: space-between; padding: .6rem .75rem; border-bottom: 1px solid var(--border-color); }
-.assistant-messages { padding: .6rem .75rem; overflow: auto; display: grid; gap: .5rem; }
+.assistant-header .assistant-actions { display: inline-flex; gap: .25rem; align-items: center; }
+.assistant-messages {
+  padding: .6rem .75rem;
+  overflow: auto;
+  display: grid;
+  gap: .5rem;
+  grid-auto-rows: max-content;   /* cada fila ajusta a su contenido */
+  align-content: start;           /* no estirar filas para llenar el alto */
+  align-items: start;             /* los items no se estiran verticalmente */
+}
 .assistant-form { display: grid; grid-template-columns: 1fr auto; gap: .5rem; padding: .6rem .75rem; border-top: 1px solid var(--border-color); }
 .assistant-form input { border: 1px solid var(--border-color); border-radius: 8px; padding: .55rem .7rem; background: var(--card-bg); color: var(--text-color); }
 .assistant-form button { border: none; border-radius: 8px; background: var(--primary-color); color: #fff; padding: .55rem .7rem; cursor: pointer; }
@@ -405,10 +415,19 @@ body {
 /* Burbujas tipo Messenger */
 .assistant-messages .assistant-user, .assistant-messages .assistant-bot {
   position: relative;
-  max-width: 80%;
+  display: inline-block;            /* bubble fits content */
+  width: -moz-fit-content;
+  width: fit-content;               /* auto-size to text */
+  max-width: 80%;                   /* cap width */
   padding: .55rem .7rem;
   border-radius: 16px;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
+.assistant-messages .msg-time { display:block; font-size:.72rem; opacity:.75; margin-top:.25rem; }
+.assistant-messages .assistant-user .msg-time { text-align:right; color:#e5e7eb; opacity:.85; }
+.assistant-messages .assistant-bot .msg-time { text-align:left; color:#9ca3af; }
 .assistant-messages .assistant-user {
   justify-self: end;
   background: linear-gradient(135deg, #0084ff, #0f6ea6);
@@ -448,6 +467,47 @@ body {
 .assistant-suggestion .assistant-add { border: 1px solid var(--border-color); background: var(--secondary-bg); border-radius: 8px; width: 36px; height: 32px; cursor: pointer; }
 .assistant-suggestion.added { outline: 2px solid var(--secondary-color); }
 
+/* Cart delete button: avoid text overflow */
+.qty button[data-del] {
+  width: auto !important;
+  height: auto !important;
+  min-height: 28px;
+  padding: .3rem .6rem;
+  border: 1px solid var(--border-color);
+  background: var(--secondary-bg);
+  border-radius: 6px;
+  white-space: nowrap;
+  font-size: .9rem;
+}
+
+/* Keep compact size for +/- controls */
+.qty button[data-inc],
+.qty button[data-dec] {
+  width: 28px;
+  height: 28px;
+}
+
+/* Checkout form inside drawer */
+.checkout-form { display: grid; gap: .75rem; }
+.checkout-form h3 { margin: 0; font-size: 1.15rem; }
+.checkout-form h4 { font-size: 1rem; margin: .25rem 0; }
+.checkout-form section { border: 1px solid var(--border-color); border-radius: 10px; padding: .6rem; background: var(--card-bg); }
+.checkout-form .radio { display: block; margin: .25rem 0; }
+.checkout-form input[type="text"],
+.checkout-form input[type="email"],
+.checkout-form input[type="tel"],
+.checkout-form textarea {
+  width: 100%;
+  padding: .55rem .7rem;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-color);
+  border-radius: 8px;
+}
+.checkout-form .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.checkout-actions { display: flex; gap: .5rem; justify-content: flex-end; }
+.entrega-datos.hidden { display: none; }
+
 /* Desktop: panel fijo a la derecha, alto completo */
 @media (min-width: 768px) {
   .assistant-panel {
@@ -459,4 +519,5 @@ body {
     overflow: hidden;
   }
   .assistant-backdrop { display: none !important; }
+  .drawer-open .assistant-panel { left: 16px; right: auto; }
 }

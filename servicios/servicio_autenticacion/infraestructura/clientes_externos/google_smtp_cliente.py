@@ -26,19 +26,25 @@ class GoogleSMTPCliente(IServicioCorreo):
     """
 
     def __init__(self):
-        self.smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-        self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        self.smtp_user = os.getenv("SMTP_USER")
-        self.smtp_password = os.getenv("SMTP_PASSWORD")
-        self.smtp_from_name = os.getenv("SMTP_FROM_NAME", "Libreria Jehova Jireh")
-        self.smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
-        self.smtp_use_ssl = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
-        self.smtp_timeout = int(os.getenv("SMTP_TIMEOUT", "30"))
+        # Permitir variables MAIL_* como fallback
+        self.smtp_server = os.getenv("SMTP_SERVER") or os.getenv("MAIL_SERVER") or "smtp.gmail.com"
+        self.smtp_port = int(os.getenv("SMTP_PORT") or os.getenv("MAIL_PORT") or "587")
+        self.smtp_user = os.getenv("SMTP_USER") or os.getenv("MAIL_USERNAME")
+        self.smtp_password = os.getenv("SMTP_PASSWORD") or os.getenv("MAIL_PASSWORD")
+        self.smtp_from_name = os.getenv("SMTP_FROM_NAME") or os.getenv("MAIL_DEFAULT_SENDER") or "Libreria Jehova Jireh"
+        self.smtp_use_tls = (os.getenv("SMTP_USE_TLS") or os.getenv("MAIL_USE_TLS") or "true").lower() == "true"
+        self.smtp_use_ssl = (os.getenv("SMTP_USE_SSL") or os.getenv("MAIL_USE_SSL") or "false").lower() == "true"
+        self.smtp_timeout = int(os.getenv("SMTP_TIMEOUT") or os.getenv("MAIL_TIMEOUT") or "30")
+        self.suppress_send = (os.getenv("MAIL_SUPPRESS_SEND") or "false").lower() == "true"
 
         if not self.smtp_user or not self.smtp_password:
             print("ADVERTENCIA: SMTP_USER/SMTP_PASSWORD no configurados en .env. No se podran enviar correos.")
 
-    def enviar_correo(self, destinatario: str, asunto: str, cuerpo_html: str) -> None:
+    # Alias por compatibilidad
+    def enviar_email(self, para: str, asunto: str, html: str, texto_plano: str | None = None) -> None:
+        return self.enviar_correo(destinatario=para, asunto=asunto, cuerpo_html=html, texto_plano=texto_plano)
+
+    def enviar_correo(self, destinatario: str, asunto: str, cuerpo_html: str, texto_plano: str | None = None) -> None:
         """
         Envia correo HTML usando TLS (STARTTLS) o SSL según configuración.
         """
@@ -46,12 +52,16 @@ class GoogleSMTPCliente(IServicioCorreo):
             print(f"ERROR SMTP: faltan credenciales. No se enviara a {destinatario}.")
             return
 
+        if self.suppress_send:
+            print(f"[SMTP SUPPRESS] To:{destinatario} Subject:{asunto}")
+            return
+
         msg = MIMEMultipart("alternative")
         msg["From"] = f"{self.smtp_from_name} <{self.smtp_user}>"
         msg["To"] = destinatario
         msg["Subject"] = asunto
 
-        texto_plano = "Para ver este mensaje, habilita contenido HTML."
+        texto_plano = texto_plano or "Para ver este mensaje, habilita contenido HTML."
         part_text = MIMEText(texto_plano, "plain", "utf-8")
         part_html = MIMEText(cuerpo_html, "html", "utf-8")
         msg.attach(part_text)
@@ -81,4 +91,3 @@ class GoogleSMTPCliente(IServicioCorreo):
         except Exception as e:
             print(f"Error al enviar correo SMTP a {destinatario}: {e}")
             raise
-

@@ -258,8 +258,8 @@ def admin_incrementar_stock(pid: str):
     if cantidad == 0:
         return jsonify({"error": "'cantidad' no puede ser 0."}), 400
     try:
-    _repo.incrementar_stock(pid, cantidad)
-    return jsonify({"ok": True, "id": pid, "delta": cantidad}), 200
+        _repo.incrementar_stock(pid, cantidad)
+        return jsonify({"ok": True, "id": pid, "delta": cantidad}), 200
     except Exception:
         return jsonify({"error": "No se pudo actualizar el stock."}), 500
 

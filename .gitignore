@@ -22,3 +22,6 @@ Thumbs.db
 # Windows device ghost file
 CON
 
+# Local temp previews created by tooling
+TEMP_*
+

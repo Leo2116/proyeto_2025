@@ -9,8 +9,8 @@ services:
       --workers 2 --threads 8 --timeout 120 --access-logfile - --error-logfile -
     autoDeploy: true
     healthCheckPath: /
-    # Ejecuta migraciones automáticamente después de cada deploy
-    postdeploy: alembic upgrade head
+    # Ejecuta migraciones automáticamente durante cada deploy
+    preDeployCommand: alembic upgrade head
     envVars:
       - key: DATABASE_URL
         # Pega aquí tu cadena de conexión de Neon (con sslmode=require)

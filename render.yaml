@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: libreria-web
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      gunicorn "app:create_app()" --bind 0.0.0.0:$PORT
+      --workers 2 --threads 8 --timeout 120 --access-logfile - --error-logfile -
+    autoDeploy: true
+    healthCheckPath: /
+    # Ejecuta migraciones automáticamente después de cada deploy
+    postdeploy: alembic upgrade head
+    envVars:
+      - key: DATABASE_URL
+        # Pega aquí tu cadena de conexión de Neon (con sslmode=require)
+        # Ejemplo: postgresql://user:pass@host/db?sslmode=require
+        # No incluyas comillas.
+        value: 
+      - key: SECRET_KEY
+        generateValue: true
+      - key: APP_BASE_URL
+        value: https://libreria-web.onrender.com
+      # Otras variables opcionales que ya usas; completa según necesidad
+      - key: STRIPE_PUBLISHABLE_KEY
+        value: 
+      - key: STRIPE_SECRET_KEY
+        value: 
+      - key: PAYPAL_CLIENT_ID
+        value: 
+      - key: PAYPAL_CLIENT_SECRET
+        value: 
+      - key: RECAPTCHA_SITE_KEY
+        value: 
+      - key: RECAPTCHA_SECRET_KEY
+        value: 
+      - key: SMTP_SERVER
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USE_TLS
+        value: "true"
+      - key: SMTP_USER
+        value: 
+      - key: SMTP_PASSWORD
+        value: 

@@ -1,6 +1,7 @@
 # configuracion.py
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 try:
     # Cargar variables de entorno si existe .env (opcional)
@@ -20,7 +21,22 @@ class Config:
     # Ruta a la base de datos (fija en la raíz del proyecto)
     BASE_DIR = Path(__file__).resolve().parent
     DB_PATH = BASE_DIR / "db_libreria.sqlite"
-    SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI", f"sqlite:///{DB_PATH}")
+    # Prefer explicit SQLALCHEMY_DATABASE_URI, then DATABASE_URL (e.g., Neon), else local SQLite
+    _db_url = (
+        os.getenv("SQLALCHEMY_DATABASE_URI")
+        or os.getenv("DATABASE_URL")
+        or f"sqlite:///{DB_PATH}"
+    )
+
+    # Normalize Postgres URL to use psycopg3 driver if available
+    try:
+        import psycopg  # noqa: F401
+        if _db_url.startswith("postgresql://") and "+" not in _db_url.split("://", 1)[0]:
+            _db_url = _db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    except Exception:
+        pass
+
+    SQLALCHEMY_DATABASE_URI = _db_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JSON_AS_ASCII = False
 

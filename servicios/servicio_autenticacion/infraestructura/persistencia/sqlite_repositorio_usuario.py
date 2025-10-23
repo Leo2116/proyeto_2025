@@ -5,7 +5,8 @@
 # ==============================================================================
 from typing import Optional
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 # Contrato de la capa de aplicación
 from servicios.servicio_autenticacion.aplicacion.repositorios.repositorio_usuario_interface import IRepositorioUsuario
@@ -25,11 +26,20 @@ Session = sessionmaker(bind=Engine, autoflush=False, autocommit=False, future=Tr
 def _ensure_is_admin_column():
     try:
         with Engine.begin() as conn:
-            # SQLite PRAGMA table_info devuelve: cid, name, type, notnull, dflt_value, pk
-            res = conn.exec_driver_sql("PRAGMA table_info(usuarios)")
-            cols = [row[1] for row in res]
-            if 'is_admin' not in cols:
-                conn.exec_driver_sql("ALTER TABLE usuarios ADD COLUMN is_admin BOOLEAN DEFAULT 0")
+            dialect = conn.dialect.name
+            if dialect == 'sqlite':
+                res = conn.exec_driver_sql("PRAGMA table_info(usuarios)")
+                cols = [row[1] for row in res]
+                if 'is_admin' not in cols:
+                    conn.exec_driver_sql("ALTER TABLE usuarios ADD COLUMN is_admin BOOLEAN DEFAULT 0")
+            else:
+                # Postgres / otros: usar information_schema
+                res = conn.exec_driver_sql(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name='usuarios' AND table_schema = current_schema()"
+                )
+                cols = [row[0] for row in res]
+                if 'is_admin' not in cols:
+                    conn.exec_driver_sql("ALTER TABLE usuarios ADD COLUMN is_admin BOOLEAN DEFAULT FALSE")
     except Exception as e:
         # No interrumpir la app si falla; solo loguear
         print(f"[WARN] No se pudo verificar/agregar columna is_admin: {e}")
@@ -125,7 +135,15 @@ class SQLiteRepositorioUsuario(IRepositorioUsuario):
                 session.add(nuevo_orm)
 
             session.commit()
-        except Exception as e:
+        except IntegrityError as e:
+            session.rollback()
+            msg = str(getattr(e, 'orig', e))
+            # Manejar duplicado de email de manera amable
+            if 'duplicate key value' in msg or 'UNIQUE constraint failed' in msg or 'usuarios_email_key' in msg:
+                raise ValueError("El email ya se encuentra registrado.")
+            print(f"Error de integridad al guardar usuario: {msg}")
+            raise
+        except SQLAlchemyError as e:
             session.rollback()
             print(f"Error al guardar o actualizar usuario: {e}")
             raise

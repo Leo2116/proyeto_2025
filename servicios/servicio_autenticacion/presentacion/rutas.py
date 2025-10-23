@@ -86,7 +86,8 @@ def _registrar_impl():
             try:
                 r = requests.post(
                     'https://www.google.com/recaptcha/api/siteverify',
-                    data={'secret': secret, 'response': recaptcha_token, 'remoteip': request.headers.get('X-Forwarded-For', request.remote_addr)},
+                    # remoteip es opcional y puede causar falsos negativos detrás de proxy
+                    data={'secret': secret, 'response': recaptcha_token},
                     timeout=10
                 )
                 jr = (r.json() or {})
@@ -175,7 +176,7 @@ def login():
             try:
                 r = requests.post(
                     'https://www.google.com/recaptcha/api/siteverify',
-                    data={'secret': secret, 'response': recaptcha_token, 'remoteip': request.headers.get('X-Forwarded-For', request.remote_addr)},
+                    data={'secret': secret, 'response': recaptcha_token},
                     timeout=10
                 )
                 jr = (r.json() or {})
@@ -236,8 +237,13 @@ def login():
         # Manejo de errores de credenciales (ej: email o password incorrectos)
         return jsonify({"error": str(e)}), 401  # No autorizado
 
-    except Exception:
-        # Manejo de errores internos
+    except Exception as e:
+        # Manejo de errores internos con logging para diagnóstico
+        try:
+            import traceback
+            print("[LOGIN_ERROR]", traceback.format_exc())
+        except Exception:
+            print(f"[LOGIN_ERROR] {e}")
         return jsonify({"error": "Error interno del servidor al iniciar sesion."}), 500
 
 

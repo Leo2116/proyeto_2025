@@ -9,8 +9,10 @@ services:
       --workers 2 --threads 8 --timeout 120 --access-logfile - --error-logfile -
     autoDeploy: true
     healthCheckPath: /
-    # Ejecuta migraciones automáticamente durante cada deploy
-    preDeployCommand: alembic upgrade head
+    # Valida conexión a la DB y luego migra (manejado por Blueprint)
+    preDeployCommand: >-
+      python -c "import os,psycopg; u=os.environ.get('SQLALCHEMY_DATABASE_URI') or os.environ['DATABASE_URL']; print('DBURL=',u); psycopg.connect(u).close(); print('DB OK')" &&
+      alembic upgrade head
     envVars:
       - key: DATABASE_URL
         # Pega aquí tu cadena de conexión de Neon (con sslmode=require)

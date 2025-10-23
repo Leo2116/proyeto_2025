@@ -304,3 +304,45 @@ def admin_diag():
         info.update({"db_ok": False, "db_error": str(e)})
     return jsonify(info), 200
 
+
+@admin_bp.get("/diag_public")
+def public_diag():
+    """Diagnóstico básico público con token: /api/v1/admin/diag_public?token=XYZ
+    Usa el env DIAG_TOKEN para autorizar; no expone secretos.
+    """
+    token = (request.args.get("token") or "").strip()
+    expected = (os.getenv("DIAG_TOKEN") or "").strip()
+    if not expected or token != expected:
+        return jsonify({"error": "No autorizado"}), 403
+
+    info = {
+        "app_base_url": getattr(Config, "APP_BASE_URL", None),
+        "recaptcha_site_key_len": len(getattr(Config, "RECAPTCHA_SITE_KEY", "") or ""),
+        "hostname": request.host,
+    }
+    try:
+        from sqlalchemy import create_engine, text
+        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+        engine = create_engine(db_url, future=True)
+        with engine.connect() as conn:
+            head = None
+            try:
+                res = conn.execute(text("select version_num from alembic_version limit 1"))
+                row = res.first()
+                head = row[0] if row else None
+            except Exception:
+                head = None
+            who = conn.execute(text("select current_user, current_database(), current_schema()"))
+            cu, cd, cs = who.first()
+            info.update({
+                "db_ok": True,
+                "alembic_head": head,
+                "db_user": cu,
+                "db_name": cd,
+                "db_schema": cs,
+                "db_driver": engine.dialect.name,
+            })
+    except Exception as e:
+        info.update({"db_ok": False, "db_error": str(e)})
+    return jsonify(info), 200
+

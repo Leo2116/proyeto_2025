@@ -301,6 +301,10 @@ document.addEventListener('DOMContentLoaded', () => {
           const ta = loginForm?.querySelector('textarea.g-recaptcha-response');
           recaptcha = ta && ta.value ? ta.value : undefined;
         }
+        // Si hay un widget visible pero sin token, evita enviar hasta que el usuario lo complete
+        if (!recaptcha && loginForm?.querySelector('.g-recaptcha')) {
+          throw new Error('Completa el reCAPTCHA.');
+        }
       } catch {}
 
       await fetchJSON('/api/v1/auth/login', {
@@ -391,6 +395,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!recaptcha) {
           const ta = registerForm?.querySelector('textarea.g-recaptcha-response');
           recaptcha = ta && ta.value ? ta.value : undefined;
+        }
+        if (!recaptcha && registerForm?.querySelector('.g-recaptcha')) {
+          throw new Error('Completa el reCAPTCHA.');
         }
       } catch {}
       const resp = await fetchJSON('/api/v1/auth/register', {

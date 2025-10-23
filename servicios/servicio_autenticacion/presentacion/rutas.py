@@ -91,6 +91,14 @@ def _registrar_impl():
                 )
                 jr = (r.json() or {})
                 ok = jr.get('success', False)
+                # Log and handle common error codes for diagnostics
+                try:
+                    print('reCAPTCHA verify', {'ok': ok, 'errors': jr.get('error-codes'), 'hostname': jr.get('hostname')})
+                except Exception:
+                    pass
+                errors = jr.get('error-codes') or []
+                if (not ok) and isinstance(errors, list) and ('timeout-or-duplicate' in errors):
+                    return jsonify({"error": "reCAPTCHA expirado. Marca nuevamente el checkbox."}), 400
                 if not ok:
                     return jsonify({"error": "reCAPTCHA inválido."}), 400
             except Exception:
@@ -172,6 +180,13 @@ def login():
                 )
                 jr = (r.json() or {})
                 ok = jr.get('success', False)
+                try:
+                    print('reCAPTCHA verify', {'ok': ok, 'errors': jr.get('error-codes'), 'hostname': jr.get('hostname')})
+                except Exception:
+                    pass
+                errors = jr.get('error-codes') or []
+                if (not ok) and isinstance(errors, list) and ('timeout-or-duplicate' in errors):
+                    return jsonify({"error": "reCAPTCHA expirado. Marca nuevamente el checkbox."}), 400
                 if not ok:
                     return jsonify({"error": "reCAPTCHA inválido."}), 400
             except Exception:

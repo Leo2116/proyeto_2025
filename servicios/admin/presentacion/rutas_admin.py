@@ -258,8 +258,49 @@ def admin_incrementar_stock(pid: str):
     if cantidad == 0:
         return jsonify({"error": "'cantidad' no puede ser 0."}), 400
     try:
-        _repo.incrementar_stock(pid, cantidad)
-        return jsonify({"ok": True, "id": pid, "delta": cantidad}), 200
+    _repo.incrementar_stock(pid, cantidad)
+    return jsonify({"ok": True, "id": pid, "delta": cantidad}), 200
     except Exception:
         return jsonify({"error": "No se pudo actualizar el stock."}), 500
+
+
+@admin_bp.get("/diag")
+def admin_diag():
+    """Diagnóstico básico (solo admin): DB reachable, alembic head, claves presentes.
+    No expone secretos ni datos sensibles.
+    """
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    # Datos base
+    info = {
+        "app_base_url": getattr(Config, "APP_BASE_URL", None),
+        "recaptcha_site_key_len": len(getattr(Config, "RECAPTCHA_SITE_KEY", "") or ""),
+        "hostname": request.host,
+    }
+    # DB checks
+    try:
+        from sqlalchemy import create_engine, text
+        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+        engine = create_engine(db_url, future=True)
+        with engine.connect() as conn:
+            head = None
+            try:
+                res = conn.execute(text("select version_num from alembic_version limit 1"))
+                row = res.first()
+                head = row[0] if row else None
+            except Exception:
+                head = None
+            who = conn.execute(text("select current_user, current_database(), current_schema()"))
+            cu, cd, cs = who.first()
+            info.update({
+                "db_ok": True,
+                "alembic_head": head,
+                "db_user": cu,
+                "db_name": cd,
+                "db_schema": cs,
+                "db_driver": engine.dialect.name,
+            })
+    except Exception as e:
+        info.update({"db_ok": False, "db_error": str(e)})
+    return jsonify(info), 200
 

@@ -118,13 +118,60 @@ def _norm(s: str) -> str:
         return (str(s or "")).lower()
 
 def _is_in_domain(text: str) -> bool:
+    """Guarda el dominio mediante una lista blanca de tokens.
+
+    - Si AI_DOMAIN_WHITELIST_ENABLED es false/0 → siempre True.
+    - Usa AI_DOMAIN_WHITELIST; si está vacío o con caracteres inválidos (�), usa un fallback amplio.
+    - Normaliza acentos y compara por inclusión.
+    """
     enabled = (os.getenv("AI_DOMAIN_WHITELIST_ENABLED", "true").lower() in ("1", "true", "yes"))
     if not enabled:
         return True
-    raw = os.getenv(
-        "AI_DOMAIN_WHITELIST",
-        "libreria,catalogo,producto,autor,isbn,precio,stock,carrito,login,registro,verificacion,factura,pedido,envio,tarifa,logistica,usuario,correo,endpoint,/api/v1",
-    )
+
+    raw = os.getenv("AI_DOMAIN_WHITELIST", "") or ""
+
+    # Fallback amplio si falta o viene con mojibake (�)
+    if (not raw.strip()) or ("�" in raw):
+        raw = ",".join(
+            [
+                # núcleo de la librería
+                "libreria",
+                "catalogo",
+                "producto",
+                "libro",
+                "libros",
+                "util",
+                "utiles",
+                # atributos y filtros
+                "autor",
+                "marca",
+                "isbn",
+                "sku",
+                "precio",
+                "presupuesto",
+                "stock",
+                # flujos
+                "carrito",
+                "comprar",
+                "pagar",
+                "checkout",
+                "login",
+                "registro",
+                "verificacion",
+                "factura",
+                "pedido",
+                "envio",
+                "tarifa",
+                "logistica",
+                "usuario",
+                "correo",
+                # ejemplos concretos
+                "biblia",
+                "cuaderno",
+                "/api/v1",
+            ]
+        )
+
     tokens = [t.strip() for t in (raw or "").split(",") if t.strip()]
     ntokens = [_norm(t) for t in tokens]
     nt = _norm(text)

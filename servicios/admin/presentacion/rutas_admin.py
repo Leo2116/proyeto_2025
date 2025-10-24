@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, request, jsonify, session, current_app
 from werkzeug.utils import secure_filename
+from sqlalchemy import create_engine, text
 import os
 import re
 import requests
@@ -254,8 +255,15 @@ def admin_list_categories():
     if not _is_admin_request():
         return jsonify({"error": "No autorizado"}), 403
     try:
-        data = _repo.listar_categorias()
-        return jsonify(data), 200
+        # Preferir Postgres si está disponible
+        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+        if db_url:
+            engine = create_engine(db_url, future=True)
+            with engine.connect() as conn:
+                rows = conn.execute(text("SELECT id, nombre FROM catalog_categorias ORDER BY nombre ASC")).fetchall()
+                return jsonify([{"id": int(r[0]), "nombre": r[1]} for r in rows]), 200
+        # Fallback a SQLite admin
+        return jsonify(_repo.listar_categorias()), 200
     except Exception:
         return jsonify([]), 200
 
@@ -269,6 +277,13 @@ def admin_create_category():
     if not name:
         return jsonify({"error": "'nombre' es requerido"}), 400
     try:
+        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+        if db_url:
+            engine = create_engine(db_url, future=True)
+            with engine.begin() as conn:
+                conn.execute(text("INSERT INTO catalog_categorias(nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": name})
+                row = conn.execute(text("SELECT id FROM catalog_categorias WHERE nombre=:n"), {"n": name}).first()
+                return jsonify({"ok": True, "id": int(row[0]) if row else None, "nombre": name}), 201
         cid = _repo.get_or_create_categoria(name)
         return jsonify({"ok": True, "id": cid, "nombre": name}), 201
     except Exception:
@@ -280,8 +295,13 @@ def admin_list_materials():
     if not _is_admin_request():
         return jsonify({"error": "No autorizado"}), 403
     try:
-        data = _repo.listar_materiales()
-        return jsonify(data), 200
+        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+        if db_url:
+            engine = create_engine(db_url, future=True)
+            with engine.connect() as conn:
+                rows = conn.execute(text("SELECT id, nombre FROM catalog_materiales ORDER BY nombre ASC")).fetchall()
+                return jsonify([{"id": int(r[0]), "nombre": r[1]} for r in rows]), 200
+        return jsonify(_repo.listar_materiales()), 200
     except Exception:
         return jsonify([]), 200
 
@@ -295,6 +315,13 @@ def admin_create_material():
     if not name:
         return jsonify({"error": "'nombre' es requerido"}), 400
     try:
+        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+        if db_url:
+            engine = create_engine(db_url, future=True)
+            with engine.begin() as conn:
+                conn.execute(text("INSERT INTO catalog_materiales(nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": name})
+                row = conn.execute(text("SELECT id FROM catalog_materiales WHERE nombre=:n"), {"n": name}).first()
+                return jsonify({"ok": True, "id": int(row[0]) if row else None, "nombre": name}), 201
         mid = _repo.get_or_create_material(name)
         return jsonify({"ok": True, "id": mid, "nombre": name}), 201
     except Exception:
@@ -359,6 +386,21 @@ def admin_import_from_static():
     except Exception:
         current_app.logger.exception("Import static-products fallo")
         return jsonify({"error": "No se pudo importar"}), 500
+
+
+# ---------------- Migración SQLite → Postgres -----------------
+
+@admin_bp.post("/migrate/sqlite-to-pg")
+def admin_migrate_sqlite_to_pg():
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    try:
+        from servicios.admin.infraestructura.pg_migrator import migrate_sqlite_admin_to_postgres
+        result = migrate_sqlite_admin_to_postgres()
+        return jsonify({"ok": True, **result}), 200
+    except Exception as e:
+        current_app.logger.exception("Migración SQLite→PG fallo")
+        return jsonify({"error": "No se pudo migrar", "detail": str(e)}), 500
 
 
 @admin_bp.post("/productos/<string:pid>/stock")

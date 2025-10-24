@@ -521,3 +521,10 @@ body {
   .assistant-backdrop { display: none !important; }
   .drawer-open .assistant-panel { left: 16px; right: auto; }
 }
+
+/* Micro-ajustes para pantallas muy angostas */
+@media (max-width: 380px) {
+  .logo-text { font-size: 1rem; }
+  .header-icons button { font-size: 1.3rem; padding: 4px; }
+}
+

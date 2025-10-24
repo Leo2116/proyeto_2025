@@ -218,36 +218,8 @@ def admin_crear_producto():
     if err:
         return jsonify({"error": err}), 400
 
-    # Intentar crear en Postgres (Neon); fallback a SQLite admin
     try:
-        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
-        if db_url:
-            engine = create_engine(db_url, future=True)
-            with engine.begin() as conn:
-                row = conn.execute(text("SELECT COALESCE(MAX(CAST(id_producto AS INTEGER)),0)+1 FROM productos")).first()
-                pid = str(int(row[0]))
-                tipo = 'LIBRO' if data.get('tipo')=='Libro' else 'UTIL'
-                conn.execute(text(
-                    """
-                    INSERT INTO productos (id_producto,nombre,precio,stock,tipo,autor,isbn,material,categoria,imagen_url)
-                    VALUES (:id,:nombre,:precio,:stock,:tipo,:autor,:isbn,:material,:categoria,:img)
-                    """
-                ), {
-                    'id': pid,
-                    'nombre': data.get('nombre'),
-                    'precio': float(data.get('precio') or 0),
-                    'stock': int(data.get('stock') or 0),
-                    'tipo': tipo,
-                    'autor': data.get('autor_marca') if data.get('tipo')=='Libro' else None,
-                    'isbn': data.get('isbn_sku') if data.get('tipo')=='Libro' else None,
-                    'material': data.get('material') if data.get('tipo')=='UtilEscolar' else None,
-                    'categoria': data.get('categoria') if data.get('tipo')=='UtilEscolar' else None,
-                    'img': data.get('portada_url')
-                })
-                return jsonify({"ok": True, "id": pid}), 201
-    except Exception:
-        pass
-    try:
+        # Generar ID automáticamente, comenzando desde 1
         pid = _repo.crear_auto(data)
         return jsonify({"ok": True, "id": pid}), 201
     except Exception:
@@ -262,30 +234,6 @@ def admin_actualizar_producto(pid: str):
     data, err = _validate_payload(payload, is_update=True)
     if err:
         return jsonify({"error": err}), 400
-    # Intentar actualizar en Postgres (Neon); fallback a SQLite
-    try:
-        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
-        if db_url:
-            engine = create_engine(db_url, future=True)
-            with engine.begin() as conn:
-                fields = {
-                    'nombre': data.get('nombre'),
-                    'precio': float(data.get('precio')) if ('precio' in data) else None,
-                    'stock': int(data.get('stock')) if ('stock' in data) else None,
-                    'imagen_url': data.get('portada_url'),
-                }
-                if data.get('tipo')=='Libro':
-                    fields.update({'tipo': 'LIBRO', 'autor': data.get('autor_marca'), 'isbn': data.get('isbn_sku'), 'material': None, 'categoria': None})
-                elif data.get('tipo')=='UtilEscolar':
-                    fields.update({'tipo': 'UTIL', 'autor': None, 'isbn': None, 'material': data.get('material'), 'categoria': data.get('categoria')})
-                sets = ",".join([f"{k} = :{k}" for k,v in fields.items() if v is not None])
-                if sets:
-                    params = {k:v for k,v in fields.items() if v is not None}
-                    params['id'] = pid
-                    conn.execute(text(f"UPDATE productos SET {sets} WHERE id_producto = :id"), params)
-                return jsonify({"ok": True, "id": pid}), 200
-    except Exception:
-        pass
     if not _repo.existe(pid):
         return jsonify({"error": "No existe"}), 404
     _repo.actualizar(pid, data)
@@ -296,15 +244,6 @@ def admin_actualizar_producto(pid: str):
 def admin_eliminar_producto(pid: str):
     if not _is_admin():
         return jsonify({"error": "No autorizado"}), 403
-    try:
-        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
-        if db_url:
-            engine = create_engine(db_url, future=True)
-            with engine.begin() as conn:
-                conn.execute(text("DELETE FROM productos WHERE id_producto = :id"), {"id": pid})
-                return jsonify({"ok": True}), 200
-    except Exception:
-        pass
     _repo.eliminar(pid)
     return jsonify({"ok": True}), 200
 
@@ -563,5 +502,6 @@ def public_diag():
     except Exception as e:
         info.update({"db_ok": False, "db_error": str(e)})
     return jsonify(info), 200
+
 
 

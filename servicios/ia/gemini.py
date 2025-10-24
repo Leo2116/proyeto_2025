@@ -174,7 +174,8 @@ def build_gemini_payload(prompt_text: str, normalized_image: Optional[Normalized
 
 
 def _endpoint_for_model(model: Optional[str]) -> Tuple[str, str]:
-    model_name = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash-latest")
+    # Forzar siempre el modelo solicitado
+    model_name = "gemini-2.5-flash-latest"
     base = "https://generativelanguage.googleapis.com/v1"
     endpoint = f"{base}/models/{model_name}:generateContent"
     return model_name, endpoint
@@ -310,4 +311,3 @@ def call_gemini(
         int((normalized_image.size_mb * 1024)) if normalized_image else None, None
     )
     raise GeminiError("Timeout o error de red al consultar Gemini.", status=504, category="upstream")
-

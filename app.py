@@ -1,5 +1,6 @@
 # app.py
 from flask import Flask, render_template, jsonify, request, session
+from flask_cors import CORS
 import os
 
 from configuracion import Config
@@ -19,6 +20,9 @@ def crear_app():
         template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"),
         static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"),
     )
+    # Habilitar CORS para toda la aplicación (todos los orígenes)
+    # Necesario para permitir que el frontend (Render) consuma la API
+    CORS(app, resources={r"/*": {"origins": "*"}})
     app.config.from_object(Config)
     # Por si tu Config no trae SECRET_KEY
     app.config.setdefault("SECRET_KEY", "cambia-esto-por-uno-seguro")

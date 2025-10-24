@@ -6,7 +6,7 @@ from flask import current_app
 
 
 # Modelo fijo (siempre usar este)
-_MODEL_ID = "gemini-2.5-flash-latest"
+_MODEL_ID = "gemini-2.5-flash"
 _model = None  # Inicialización perezosa
 
 
@@ -123,7 +123,7 @@ def generar_respuesta_catalogo(prompt: str, contexto: Any | None = None) -> str:
             # Pista útil en logs si es 404/NotFound o v1beta
             msg = str(e)
             if "NotFound" in msg or "404" in msg:
-                current_app.logger.error("Modelo de Gemini no encontrado: gemini-2.5-flash-latest")
+                current_app.logger.error("Modelo de Gemini no encontrado: gemini-2.5-flash")
         except Exception:
             pass
         return (

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, current_app
+from werkzeug.utils import secure_filename
 import os
 import re
 import requests
@@ -244,6 +245,120 @@ def admin_eliminar_producto(pid: str):
         return jsonify({"error": "No autorizado"}), 403
     _repo.eliminar(pid)
     return jsonify({"ok": True}), 200
+
+
+# ---------------- Catálogos (categorías/materiales) -----------------
+
+@admin_bp.get("/catalog/categories")
+def admin_list_categories():
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    try:
+        data = _repo.listar_categorias()
+        return jsonify(data), 200
+    except Exception:
+        return jsonify([]), 200
+
+
+@admin_bp.post("/catalog/categories")
+def admin_create_category():
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    body = request.get_json(silent=True) or {}
+    name = (body.get("nombre") or body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "'nombre' es requerido"}), 400
+    try:
+        cid = _repo.get_or_create_categoria(name)
+        return jsonify({"ok": True, "id": cid, "nombre": name}), 201
+    except Exception:
+        return jsonify({"error": "No se pudo crear"}), 500
+
+
+@admin_bp.get("/catalog/materials")
+def admin_list_materials():
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    try:
+        data = _repo.listar_materiales()
+        return jsonify(data), 200
+    except Exception:
+        return jsonify([]), 200
+
+
+@admin_bp.post("/catalog/materials")
+def admin_create_material():
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    body = request.get_json(silent=True) or {}
+    name = (body.get("nombre") or body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "'nombre' es requerido"}), 400
+    try:
+        mid = _repo.get_or_create_material(name)
+        return jsonify({"ok": True, "id": mid, "nombre": name}), 201
+    except Exception:
+        return jsonify({"error": "No se pudo crear"}), 500
+
+
+# ---------------- Upload de imágenes -----------------
+
+@admin_bp.post("/upload")
+def admin_upload_image():
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    if 'file' not in request.files:
+        return jsonify({"error": "archivo 'file' es requerido (multipart/form-data)"}), 400
+    f = request.files['file']
+    if not f or f.filename == '':
+        return jsonify({"error": "Archivo vacío"}), 400
+    # Aceptar imágenes comunes
+    allowed = {'.png', '.jpg', '.jpeg', '.webp'}
+    ext = ('.' + f.filename.rsplit('.', 1)[-1].lower()) if '.' in f.filename else ''
+    if ext not in allowed:
+        return jsonify({"error": "Formato no permitido"}), 400
+    try:
+        from pathlib import Path
+        from configuracion import Config
+        base_dir = Path(__file__).resolve().parents[3]
+        img_dir = base_dir / 'static' / 'img' / 'productos'
+        img_dir.mkdir(parents=True, exist_ok=True)
+        fname = secure_filename(f.filename)
+        # Evitar sobrescribir: si existe, añade sufijo incremental
+        dest = img_dir / fname
+        if dest.exists():
+            stem = dest.stem
+            i = 1
+            while True:
+                alt = img_dir / f"{stem}_{i}{dest.suffix}"
+                if not alt.exists():
+                    dest = alt
+                    break
+                i += 1
+        f.save(str(dest))
+        url = f"/static/img/productos/{dest.name}"
+        return jsonify({"ok": True, "url": url}), 201
+    except Exception:
+        current_app.logger.exception("Upload fallo")
+        return jsonify({"error": "No se pudo subir"}), 500
+
+
+# ---------------- Importar elementos de vitrina a DB -----------------
+
+@admin_bp.post("/import/static-products")
+def admin_import_from_static():
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    try:
+        from pathlib import Path
+        from servicios.servicio_catalogo.presentacion.rutas import PRECIOS_ESPECIFICOS
+        base_dir = Path(__file__).resolve().parents[3]
+        img_dir = base_dir / 'static' / 'img' / 'productos'
+        count = _repo.importar_desde_static(img_dir, PRECIOS_ESPECIFICOS)
+        return jsonify({"ok": True, "importados": count}), 200
+    except Exception:
+        current_app.logger.exception("Import static-products fallo")
+        return jsonify({"error": "No se pudo importar"}), 500
 
 
 @admin_bp.post("/productos/<string:pid>/stock")

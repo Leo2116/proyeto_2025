@@ -340,3 +340,47 @@ class AdminProductosRepo:
 
     def get_or_create_categoria(self, nombre: str) -> int:
         return self._get_or_create('catalog_categorias', 'nombre', nombre)
+
+    # ---- Listados de catálogos ----
+    def listar_categorias(self) -> List[Dict[str, Any]]:
+        with self._conn() as c:
+            rows = c.execute("SELECT id, nombre FROM catalog_categorias ORDER BY nombre ASC").fetchall()
+            return [{"id": int(r["id"]), "nombre": r["nombre"]} for r in rows]
+
+    def listar_materiales(self) -> List[Dict[str, Any]]:
+        with self._conn() as c:
+            rows = c.execute("SELECT id, nombre FROM catalog_materiales ORDER BY nombre ASC").fetchall()
+            return [{"id": int(r["id"]), "nombre": r["nombre"]} for r in rows]
+
+    # ---- Semillas / importación desde imágenes estáticas ----
+    def importar_desde_static(self, img_dir: Path, precios: dict | None = None) -> int:
+        exts = {".png", ".jpg", ".jpeg", ".webp"}
+        precios = precios or {}
+        creados = 0
+        img_dir = Path(img_dir)
+        if not img_dir.exists():
+            return 0
+        for file in sorted(img_dir.iterdir()):
+            if not file.is_file() or file.suffix.lower() not in exts:
+                continue
+            stem = file.stem
+            pid = stem  # usamos el nombre base como id legible
+            if self.existe(pid):
+                continue
+            nombre = stem.replace("_", " ").replace("-", " ").strip().title()
+            precio = float(precios.get(stem.lower(), 10.0))
+            data = {
+                "nombre": nombre,
+                "precio": precio,
+                "tipo": "UtilEscolar",
+                "autor_marca": "Genérico",
+                "isbn_sku": None,
+                "sinopsis": None,
+                "portada_url": f"/static/img/productos/{file.name}",
+                "stock": 0,
+                "material": None,
+                "categoria": None,
+            }
+            self.crear(pid, data)
+            creados += 1
+        return creados

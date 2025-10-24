@@ -51,9 +51,9 @@
         <div>
           <label>Tipo</label>
           <select id="p-tipo">
-            <option>Producto</option>
-            <option>Libro</option>
-            <option>UtilEscolar</option>
+            <option value="Libro">Libro</option>
+            <option value="UtilEscolar">UtilEscolar</option>
+            <option value="Producto">Producto</option>
           </select>
         </div>
         <!-- Campos específicos dinámicos por tipo -->
@@ -89,11 +89,19 @@
             </div>
             <div>
               <label>Material</label>
-              <input id="p-material" type="text" />
+              <select id="p-material"></select>
+              <div style="display:flex;gap:.4rem;margin-top:.35rem;">
+                <input id="p-material-new" type="text" placeholder="Nuevo material" />
+                <button id="p-material-add" class="btn-secondary" type="button">Agregar</button>
+              </div>
             </div>
             <div>
               <label>Categoría</label>
-              <input id="p-categoria" type="text" />
+              <select id="p-categoria"></select>
+              <div style="display:flex;gap:.4rem;margin-top:.35rem;">
+                <input id="p-categoria-new" type="text" placeholder="Nueva categoría" />
+                <button id="p-categoria-add" class="btn-secondary" type="button">Agregar</button>
+              </div>
             </div>
           </div>
         </div>
@@ -110,17 +118,25 @@
           <textarea id="p-sinopsis" rows="3"></textarea>
         </div>
         <div style="grid-column: 1 / -1;">
-          <label>URL de portada (opcional)</label>
-          <input id="p-portada" type="text" placeholder="/static/img/productos/mi_imagen.png" />
+          <label>Portada</label>
+          <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
+            <input id="p-portada" type="text" placeholder="/static/img/productos/mi_imagen.png" style="flex:1;" />
+            <input id="p-portada-file" type="file" accept="image/*" />
+          </div>
+          <small class="muted">Puedes pegar una URL o subir un archivo.</small>
+          <div style="margin-top:.5rem;">
+            <img id="p-portada-preview" src="" alt="Vista previa" style="max-height:120px; display:none; border:1px solid var(--border-color); padding:2px; border-radius:6px;" />
+          </div>
         </div>
         <div>
           <label>Stock</label>
           <input id="p-stock" type="number" step="1" min="0" value="0" />
         </div>
       </div>
-      <div class="admin-actions" style="margin-top:.75rem;">
+      <div class="admin-actions" style="margin-top:.75rem; gap:.5rem; display:flex;">
         <button id="btn-guardar" class="btn-primary">Guardar</button>
         <button id="btn-limpiar" class="btn-secondary">Limpiar</button>
+        <button id="btn-importar" class="btn-secondary" title="Importar imágenes de vitrina a la base">Importar vitrina → DB</button>
       </div>
       <p id="admin-msg" class="muted" style="margin-top:.5rem;"></p>
     </section>
@@ -257,7 +273,47 @@
     const tid = 'admin-tbody';
 
     function setMsg(t){ const m = $('admin-msg'); if(m){ m.textContent = t || ''; } }
-function limpiar(){ ['p-id','p-nombre','p-precio','p-autor','p-isbn','p-editorial','p-paginas','p-marca','p-sku','p-material','p-categoria','p-sinopsis','p-portada'].forEach(id=>{ const el=$(id); if(el) el.value=''; }); $('p-tipo').value='Producto'; showGroups('Producto'); }
+    async function loadCatalogSelects(){
+      try{
+        const [catsRes, matsRes] = await Promise.all([
+          fetchJSON('/api/v1/admin/catalog/categories'),
+          fetchJSON('/api/v1/admin/catalog/materials')
+        ]);
+        const catSel = $('p-categoria'); const matSel = $('p-material');
+        function fillSelect(sel, data){ if(!sel) return; sel.innerHTML='';
+          const def = document.createElement('option'); def.value=''; def.textContent='(Seleccionar)'; sel.appendChild(def);
+          (data||[]).forEach(x=>{ const o=document.createElement('option'); o.value=x.nombre; o.textContent=x.nombre; sel.appendChild(o); });
+        }
+        fillSelect(catSel, catsRes||[]); fillSelect(matSel, matsRes||[]);
+      }catch(e){}
+    }
+    function bindCatalogAdders(){
+      const addCat = $('p-categoria-add'); const newCat = $('p-categoria-new'); const catSel = $('p-categoria');
+      const addMat = $('p-material-add');  const newMat = $('p-material-new');  const matSel = $('p-material');
+      addCat && addCat.addEventListener('click', async ()=>{
+        const name = (newCat && newCat.value || '').trim(); if(!name) return;
+        try{ await fetchJSON('/api/v1/admin/catalog/categories', { method:'POST', body: JSON.stringify({ nombre: name }) }); newCat.value=''; await loadCatalogSelects(); if(catSel){ catSel.value=name; } }catch(e){}
+      });
+      addMat && addMat.addEventListener('click', async ()=>{
+        const name = (newMat && newMat.value || '').trim(); if(!name) return;
+        try{ await fetchJSON('/api/v1/admin/catalog/materials', { method:'POST', body: JSON.stringify({ nombre: name }) }); newMat.value=''; await loadCatalogSelects(); if(matSel){ matSel.value=name; } }catch(e){}
+      });
+    }
+    function bindUpload(){
+      const file = $('p-portada-file'); const input = $('p-portada'); const prev = $('p-portada-preview');
+      function updatePreview(url){ if(prev){ if(url){ prev.src=url; prev.style.display='inline-block'; } else { prev.src=''; prev.style.display='none'; } } }
+      if(input){ input.addEventListener('input', ()=> updatePreview(input.value.trim())); updatePreview(input.value.trim()); }
+      file && file.addEventListener('change', async ()=>{
+        const f = file.files && file.files[0]; if(!f) return;
+        const fd = new FormData(); fd.append('file', f);
+        try{
+          const res = await fetch('/api/v1/admin/upload', { method:'POST', body: fd, credentials:'same-origin' });
+          const data = await res.json(); if(!res.ok) throw new Error(data.error||'upload');
+          if(input){ input.value = data.url; updatePreview(data.url); }
+        }catch(e){ setMsg('No se pudo subir la imagen'); }
+      });
+    }
+function limpiar(){ ['p-id','p-nombre','p-precio','p-autor','p-isbn','p-editorial','p-paginas','p-marca','p-sku','p-material','p-categoria','p-sinopsis','p-portada'].forEach(id=>{ const el=$(id); if(el) el.value=''; }); $('p-tipo').value='UtilEscolar'; showGroups('UtilEscolar'); const prev=document.getElementById('p-portada-preview'); if(prev){ prev.src=''; prev.style.display='none'; } }
 function showGroups(tipo){
   const libro = document.getElementById('fields-libro');
   const util = document.getElementById('fields-util');
@@ -289,6 +345,7 @@ function fillForm(row){
   }
   $('p-sinopsis').value=row.sinopsis||'';
   $('p-portada').value=row.portada_url||'';
+  const prev = document.getElementById('p-portada-preview'); if(prev){ const url=row.portada_url||''; if(url){ prev.src=url; prev.style.display='inline-block'; } else { prev.src=''; prev.style.display='none'; } }
 }
 
     function rowHTML(r){
@@ -359,6 +416,9 @@ function fillForm(row){
     // Inicializaciones específicas
     (function(){
       try{
+        loadCatalogSelects();
+        bindCatalogAdders();
+        bindUpload();
         cargarTabla();
         cargarTickets();
         document.getElementById('tk-refresh')?.addEventListener('click', cargarTickets);
@@ -371,6 +431,7 @@ function fillForm(row){
     // Ocultar campos legacy combinados si aún existen en el DOM
     (function(){ ['p-autor-marca','p-isbn-sku'].forEach(id=>{ const el = document.getElementById(id); if(el){ const box = el.closest('div'); if(box){ box.style.display='none'; } } }); })();
     $('btn-limpiar').onclick = ()=> limpiar();
+    $('btn-importar').onclick = async ()=>{ try{ const r = await fetchJSON('/api/v1/admin/import/static-products', { method:'POST' }); setMsg('Importados: '+(r.importados||0)); cargarTabla(); }catch(e){ setMsg('No se pudo importar'); } };
     $('btn-guardar').onclick = async ()=>{
       setMsg('');
       const tipoSel = $('p-tipo').value;

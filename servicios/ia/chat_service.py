@@ -6,16 +6,31 @@ from flask import current_app
 
 
 # Cargar clave de API desde entorno
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY no configurada")
-
-# Configurar SDK de Gemini
-genai.configure(api_key=GEMINI_API_KEY)
-
-# Modelo por defecto para producción gratuita/rápida
 _MODEL_ID = os.getenv("GEMINI_MODEL_ID", "gemini-1.5-flash")
-_model = genai.GenerativeModel(_MODEL_ID)
+_model = None  # Se inicializa perezosamente para evitar fallos en import
+
+
+def _get_model():
+    global _model
+    if _model is not None:
+        return _model
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        # No levantar la app; se manejará en la llamada
+        raise RuntimeError("GEMINI_API_KEY no configurada")
+    try:
+        genai.configure(api_key=key)
+        model_id = os.getenv("GEMINI_MODEL_ID", _MODEL_ID)
+        _m = genai.GenerativeModel(model_id)
+        _model = _m
+        return _m
+    except Exception:
+        # Dejar traza al primer uso
+        try:
+            current_app.logger.exception("Error inicializando modelo Gemini")
+        except Exception:
+            pass
+        raise
 
 
 def _context_to_text(contexto: Any) -> str:
@@ -80,7 +95,8 @@ def generar_respuesta_catalogo(prompt: str, contexto: Any | None = None) -> str:
     contexto_txt = _context_to_text(contexto) if contexto is not None else ""
 
     try:
-        resp = _model.generate_content(
+        model = _get_model()
+        resp = model.generate_content(
             [system_prompt, prompt, contexto_txt],
             generation_config={
                 "temperature": 0.6,

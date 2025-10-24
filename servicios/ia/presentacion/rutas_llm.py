@@ -5,6 +5,7 @@ import os
 import unicodedata
 
 from servicios.ia.chat_service import generar_respuesta_catalogo
+from servicios.servicio_catalogo.infraestructura.persistencia.pg_repositorio_producto import PGRepositorioProducto
 from servicios.admin.infraestructura.tickets_repo import TicketsRepo
 from servicios.servicio_catalogo.infraestructura.persistencia.sqlite_repositorio_producto import (
     SQLiteRepositorioProducto,
@@ -14,7 +15,7 @@ from servicios.servicio_catalogo.infraestructura.persistencia.sqlite_repositorio
 ia_bp = Blueprint("ia_bp", __name__, url_prefix="/api/v1/ia")
 _tickets = TicketsRepo()
 _tickets.ensure_schema()
-_catalog_repo = SQLiteRepositorioProducto()
+_catalog_repo = PGRepositorioProducto()
 
 
 @ia_bp.post("/chat")

@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'a1b2c3d4e5f6'
-down_revision: Union[str, Sequence[str], None] = 'd37e995fdd51'
+down_revision: Union[str, Sequence[str], None] = '680e758df87c'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -36,4 +36,3 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table('catalog_materiales')
     op.drop_table('catalog_categorias')
-

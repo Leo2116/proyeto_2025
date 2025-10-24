@@ -4,7 +4,7 @@ from pathlib import Path
 
 # Importaciones del caso de uso y repositorio (para compatibilidad)
 from servicios.servicio_catalogo.aplicacion.casos_uso.obtener_detalles_producto import ObtenerDetallesDelProducto
-from servicios.servicio_catalogo.infraestructura.persistencia.sqlite_repositorio_producto import SQLiteRepositorioProducto
+from servicios.servicio_catalogo.infraestructura.persistencia.pg_repositorio_producto import PGRepositorioProducto
 from servicios.servicio_catalogo.infraestructura.clientes_api.google_books_cliente import GoogleBooksCliente
 
 catalogo_bp = Blueprint('catalogo', __name__, url_prefix='/api/v1/catalogo')
@@ -13,12 +13,10 @@ catalogo_bp = Blueprint('catalogo', __name__, url_prefix='/api/v1/catalogo')
 # CONFIGURACIÓN DE RUTAS Y DIRECTORIOS
 # --------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parents[3]  # raíz del proyecto (donde está app.py)
-DB_PATH = BASE_DIR / "data" / "catalogo.db"
 IMG_DIR = BASE_DIR / "static" / "img" / "productos"
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 IMG_DIR.mkdir(parents=True, exist_ok=True)
 
-repositorio_producto = SQLiteRepositorioProducto(db_path=str(DB_PATH))
+repositorio_producto = PGRepositorioProducto()
 google_books_api = GoogleBooksCliente()
 
 obtener_detalles_uc = ObtenerDetallesDelProducto(

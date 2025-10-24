@@ -6,8 +6,8 @@ from flask import current_app
 
 
 # Modelo por defecto (rápido / free tier)
-# Usamos alias "-latest" para compatibilidad entre v1/v1beta
-_MODEL_ID = os.getenv("GEMINI_MODEL_ID", "gemini-1.5-flash-latest")
+# Se solicita usar gemini-2.5-flash-latest
+_MODEL_ID = os.getenv("GEMINI_MODEL_ID", "gemini-2.5-flash-latest")
 _model = None  # Inicialización perezosa
 
 
@@ -27,12 +27,13 @@ def _get_model():
         candidates = []
         wanted = os.getenv("GEMINI_MODEL_ID") or _MODEL_ID
         candidates.append(wanted)
-        # Fallbacks comunes
+        # Fallbacks comunes (incluye 2.5 y 1.5)
         fallbacks = [
+            "gemini-2.5-flash-latest",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro-latest",
             "gemini-1.5-flash-latest",
             "gemini-1.5-flash-001",
-            "gemini-1.5-pro-latest",
-            "gemini-1.5-pro-001",
         ]
         for fid in fallbacks:
             if fid not in candidates:

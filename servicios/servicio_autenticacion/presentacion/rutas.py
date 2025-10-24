@@ -1,6 +1,6 @@
 # servicios/servicio_autenticacion/presentacion/rutas.py
 
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, redirect, url_for, render_template, current_app
 import os
 import requests
 
@@ -261,6 +261,25 @@ def verify_email():
     if not ok:
         return jsonify({"ok": False, "mensaje": "Token inválido o expirado."}), 400
     return jsonify({"ok": True, "mensaje": "Cuenta verificada correctamente."}), 200
+
+
+@auth_bp.route('/verify/<token>', methods=['GET'])
+def verify_email_token(token):
+    """Verifica por token en path y redirige a página de éxito."""
+    try:
+        ok = repositorio_usuario.verificar_cuenta_por_token_simple(token)
+        if not ok:
+            return render_template("error_verificacion.html"), 400
+        # Redirigir a endpoint de éxito (plantilla simple)
+        return redirect(url_for('auth_bp.verificacion_exitosa'))
+    except Exception:
+        current_app.logger.exception("Fallo verificación")
+        return render_template("error_verificacion.html"), 500
+
+
+@auth_bp.route('/verify/success', methods=['GET'])
+def verificacion_exitosa():
+    return render_template('verificacion_exitosa.html')
 
 
 @auth_bp.route('/me', methods=['GET'])

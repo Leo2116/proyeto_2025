@@ -6,6 +6,7 @@ Requiere que el repositorio implemente:
 """
 
 from urllib.parse import urlencode
+from flask import url_for, current_app
 from uuid import uuid4
 from typing import Optional
 
@@ -27,8 +28,20 @@ class EnviarVerificacionCorreo:
         return uuid4().hex
 
     def _construir_link_verificacion(self, id_usuario: str, email: str, token: str) -> str:
-        params = urlencode({"user": id_usuario, "email": email, "token": token})
-        return f"{self.app_base_url}/api/v1/auth/verify?{params}"
+        base = (getattr(Config, "APP_BASE_URL", None) or self.app_base_url or "").rstrip("/")
+        try:
+            # Preferir nueva ruta con token en path y redirección
+            path = url_for('auth_bp.verify_email_token', token=token)
+        except Exception:
+            # Fallback a querystring si no está registrada la ruta
+            params = urlencode({"user": id_usuario, "email": email, "token": token})
+            path = f"/api/v1/auth/verify?{params}"
+        link = f"{base}{path}"
+        try:
+            current_app.logger.info(f"Link verificación: {link}")
+        except Exception:
+            pass
+        return link
 
     def ejecutar(self, id_usuario: str, email: Optional[str] = None, *_args, **_kwargs) -> str:
         """

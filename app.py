@@ -1,6 +1,7 @@
 # app.py
-from flask import Flask, render_template, jsonify, request, session
+from flask import Flask, render_template, jsonify, request, session, current_app
 from flask_cors import CORS
+import logging
 import os
 
 from configuracion import Config
@@ -22,7 +23,15 @@ def crear_app():
     )
     # Habilitar CORS para toda la aplicación (todos los orígenes)
     # Necesario para permitir que el frontend (Render) consuma la API
-    CORS(app, resources={r"/*": {"origins": "*"}})
+    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+    
+    # Logging básico para producción (Render)
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    if not app.logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        app.logger.addHandler(handler)
+    app.logger.setLevel(getattr(logging, log_level, logging.INFO))
     app.config.from_object(Config)
     # Por si tu Config no trae SECRET_KEY
     app.config.setdefault("SECRET_KEY", "cambia-esto-por-uno-seguro")
@@ -123,6 +132,14 @@ def crear_app():
     @app.errorhandler(404)
     def pagina_no_encontrada(_error):
         return jsonify({"error": "Ruta no encontrada"}), 404
+
+    @app.errorhandler(Exception)
+    def _unhandled(e):
+        try:
+            current_app.logger.exception("Unhandled")
+        except Exception:
+            pass
+        return {"ok": False, "error": "server_error"}, 500
 
     return app
 

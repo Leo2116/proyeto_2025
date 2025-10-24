@@ -212,6 +212,32 @@ class SQLiteRepositorioUsuario(IRepositorioUsuario):
         finally:
             session.close()
 
+    def verificar_cuenta_por_token_simple(self, token: str) -> bool:
+        """Valida solo por token de verificación y marca la cuenta como verificada.
+        Útil para enlaces tipo /verify/<token>.
+        """
+        if not token:
+            return False
+        session = Session()
+        try:
+            orm_usuario = (
+                session.query(UsuarioORM)
+                .filter_by(token_verificacion=token)
+                .one_or_none()
+            )
+            if not orm_usuario:
+                return False
+            orm_usuario.verificado = True
+            orm_usuario.token_verificacion = None
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            print(f"Error al verificar por token simple: {e}")
+            return False
+        finally:
+            session.close()
+
     def email_verificado(self, email: str) -> bool:
         """Devuelve True si el usuario con 'email' tiene 'verificado' en True."""
         session = Session()

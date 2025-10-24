@@ -1,8 +1,10 @@
-from flask import Blueprint, request, jsonify, session
+from __future__ import annotations
+
+from flask import Blueprint, request, jsonify, session, current_app
 import os
 import unicodedata
 
-from servicios.ia.gemini_client import chat_completion as gemini_chat
+from servicios.ia.chat_service import generar_respuesta_catalogo
 from servicios.admin.infraestructura.tickets_repo import TicketsRepo
 from servicios.servicio_catalogo.infraestructura.persistencia.sqlite_repositorio_producto import (
     SQLiteRepositorioProducto,
@@ -18,98 +20,23 @@ _catalog_repo = SQLiteRepositorioProducto()
 @ia_bp.post("/chat")
 def ia_chat():
     data = request.get_json(silent=True) or {}
-    mensaje = (data.get("mensaje") or data.get("message") or "").strip()
-    if not mensaje:
-        return jsonify({"error": "'mensaje' es requerido."}), 400
+    user_msg = (data.get("message") or data.get("mensaje") or "").strip()
+    if not user_msg:
+        return jsonify({"ok": False, "error": "message requerido"}), 400
+
+    # (Opcional) obtén contexto del catálogo: top N productos o por palabra clave
+    catalog_items = _catalog_context(user_msg, limit=8)
+    contexto = catalog_items or None
 
     try:
-        # Saludo amable pero acotado al dominio
-        if _is_greeting(mensaje):
-            saludo = (
-                "¡Hola! Soy el asistente de la Librería Jehová Jiréh. "
-                "Puedo ayudarte a buscar productos o recomendar opciones de nuestro catálogo. "
-                "¿Qué estás buscando (tipo, autor/marca o presupuesto)?"
-            )
-            return jsonify({"respuesta": saludo, "provider": "assistant"}), 200
-
-        # Guardado de dominio: responder solo sobre la libreria/base de datos
-        if not _is_in_domain(mensaje):
-            rechazo = (
-                "Lo siento, solo puedo ayudarte con temas relacionados a la Libreria Jehova Jireh "
-                "(catalogo, productos, ISBN, stock, pedidos, envios y endpoints de la app)."
-            )
-            user_email = (session.get("user_email") or None)
-            try:
-                tid = _tickets.crear(mensaje, user_email=user_email, provider="guard", error="outside_domain")
-            except Exception:
-                tid = None
-            return jsonify({"respuesta": rechazo, "provider": "guard", "ticket_id": tid}), 200
-
-        model = data.get("model")
-        system = data.get("system")
-        temperature = float(data.get("temperature", 0.3))
-
-        # Construir contexto desde la base de datos para forzar respuestas basadas en catálogo
-        catalog_items = _catalog_context(mensaje, limit=8)
-        if not catalog_items:
-            aclarar = (
-                "Puedo ayudarte a elegir, pero necesito un poco más de información. "
-                "¿Buscas un libro o un útil escolar? ¿Autor/marca o presupuesto aproximado?"
-            )
-            return jsonify({"respuesta": aclarar, "provider": "assistant"}), 200
-
-        reglas = (
-            "Eres el asistente de la 'Librería Jehová Jiréh'.\n"
-            "Responde únicamente usando el catálogo provisto; no inventes datos.\n"
-            "Sé amable y breve. Si falta información, pide 1-2 aclaraciones (tipo, autor/marca, presupuesto).\n"
-            "Si intentan conversar de otros temas, indica amablemente que solo ayudas con la librería.\n"
-            "En recomendaciones, sugiere 3-5 opciones del catálogo con precio y un motivo simple."
-        )
-        lines = []
-        for it in catalog_items:
-            precio = float(it.get("precio") or 0)
-            extra_am = it.get("autor") or it.get("marca") or it.get("autor_marca")
-            extra_is = it.get("isbn") or it.get("sku") or it.get("isbn_sku")
-            line = f"- {it.get('id')} | {it.get('nombre')} | {it.get('tipo') or '-'} | Q{precio:.2f}"
-            if extra_am:
-                line += f" | Autor/Marca: {extra_am}"
-            if extra_is:
-                line += f" | ISBN/SKU: {extra_is}"
-            lines.append(line)
-        contexto = "Catálogo (máx 8):\n" + "\n".join(lines)
-        sys_prompt = ((system or "").strip() + "\n\n" + reglas + "\n\n" + contexto).strip()
-
-        out = gemini_chat(mensaje, system_prompt=sys_prompt, model=model, temperature=temperature)
-        texto = (out.get("texto") or "").strip()
-        if not texto:
-            # crear ticket si modelo no pudo responder
-            user_email = (session.get("user_email") or None)
-            try:
-                tid = _tickets.crear(mensaje, user_email=user_email, provider="gemini", error="empty_response")
-            except Exception:
-                tid = None
-            rechazo = "No tengo una respuesta precisa en este momento. He generado un ticket para atención humana."
-            return jsonify({"respuesta": rechazo, "provider": "gemini", "ticket_id": tid}), 200
-        return jsonify({"respuesta": texto, "usage": out.get("usage"), "provider": "gemini"}), 200
-    except ValueError as ve:
-        # Error de entrada / prompt; crear ticket para seguimiento
-        try:
-            _tickets.crear(mensaje or "", user_email=(session.get("user_email") or None), provider="gemini", error=str(ve))
-        except Exception:
-            pass
-        return jsonify({"error": str(ve), "ticket": True}), 400
-    except RuntimeError as re:
-        try:
-            _tickets.crear(mensaje or "", user_email=(session.get("user_email") or None), provider="gemini", error=str(re))
-        except Exception:
-            pass
-        return jsonify({"error": str(re), "ticket": True}), 502
+        respuesta = generar_respuesta_catalogo(user_msg, contexto)
+        current_app.logger.info("IA OK /chat")
+        return jsonify({"ok": True, "message": respuesta}), 200
     except Exception:
-        try:
-            _tickets.crear(mensaje or "", user_email=(session.get("user_email") or None), provider="gemini", error="unexpected_error")
-        except Exception:
-            pass
-        return jsonify({"error": "Error al consultar el modelo de IA.", "ticket": True}), 502
+        current_app.logger.exception("IA ERROR /chat")
+        return jsonify({"ok": False, "error": "No se pudo generar respuesta"}), 500
+
+
 def _norm(s: str) -> str:
     try:
         nf = unicodedata.normalize("NFD", str(s or ""))
@@ -117,61 +44,21 @@ def _norm(s: str) -> str:
     except Exception:
         return (str(s or "")).lower()
 
-def _is_in_domain(text: str) -> bool:
-    """Guarda el dominio mediante una lista blanca de tokens.
 
-    - Si AI_DOMAIN_WHITELIST_ENABLED es false/0 → siempre True.
-    - Usa AI_DOMAIN_WHITELIST; si está vacío o con caracteres inválidos (�), usa un fallback amplio.
-    - Normaliza acentos y compara por inclusión.
-    """
+def _is_in_domain(text: str) -> bool:
+    """Conservado por compatibilidad; no se usa actualmente."""
     enabled = (os.getenv("AI_DOMAIN_WHITELIST_ENABLED", "true").lower() in ("1", "true", "yes"))
     if not enabled:
         return True
-
     raw = os.getenv("AI_DOMAIN_WHITELIST", "") or ""
-
-    # Fallback amplio si falta o viene con mojibake (�)
-    if (not raw.strip()) or ("�" in raw):
-        raw = ",".join(
-            [
-                # núcleo de la librería
-                "libreria",
-                "catalogo",
-                "producto",
-                "libro",
-                "libros",
-                "util",
-                "utiles",
-                # atributos y filtros
-                "autor",
-                "marca",
-                "isbn",
-                "sku",
-                "precio",
-                "presupuesto",
-                "stock",
-                # flujos
-                "carrito",
-                "comprar",
-                "pagar",
-                "checkout",
-                "login",
-                "registro",
-                "verificacion",
-                "factura",
-                "pedido",
-                "envio",
-                "tarifa",
-                "logistica",
-                "usuario",
-                "correo",
-                # ejemplos concretos
-                "biblia",
-                "cuaderno",
-                "/api/v1",
-            ]
-        )
-
+    if (not raw.strip()) or ("?" in raw):
+        raw = ",".join([
+            "libreria", "catalogo", "producto", "libro", "libros", "util", "utiles",
+            "autor", "marca", "isbn", "sku", "precio", "presupuesto", "stock",
+            "carrito", "comprar", "pagar", "checkout", "login", "registro", "verificacion",
+            "factura", "pedido", "envio", "tarifa", "logistica", "usuario", "correo",
+            "biblia", "cuaderno", "/api/v1",
+        ])
     tokens = [t.strip() for t in (raw or "").split(",") if t.strip()]
     ntokens = [_norm(t) for t in tokens]
     nt = _norm(text)
@@ -202,3 +89,11 @@ def _catalog_context(query: str, limit: int = 8) -> list[dict]:
         return data
     except Exception:
         return []
+
+
+# --- Pruebas rápidas ---
+# IA:
+# curl -s -X POST "$APP_BASE_URL/api/v1/ia/chat" \
+#   -H "Content-Type: application/json" \
+#   -d '{"message":"busco un libro de matemáticas para secundaria"}'
+

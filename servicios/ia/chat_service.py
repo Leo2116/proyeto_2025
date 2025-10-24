@@ -6,7 +6,8 @@ from flask import current_app
 
 
 # Modelo por defecto (rápido / free tier)
-_MODEL_ID = os.getenv("GEMINI_MODEL_ID", "gemini-1.5-flash")
+# Usamos alias "-latest" para compatibilidad entre v1/v1beta
+_MODEL_ID = os.getenv("GEMINI_MODEL_ID", "gemini-1.5-flash-latest")
 _model = None  # Inicialización perezosa
 
 
@@ -18,10 +19,42 @@ def _get_model():
     if not key:
         raise RuntimeError("GEMINI_API_KEY no configurada")
     try:
-        genai.configure(api_key=key)
-        model_id = os.getenv("GEMINI_MODEL_ID", _MODEL_ID)
-        _model = genai.GenerativeModel(model_id)
-        return _model
+        # Forzar REST para evitar incompatibilidades gRPC/v1beta en algunos entornos
+        transport = os.getenv("GEMINI_TRANSPORT", "rest")
+        genai.configure(api_key=key, transport=transport)
+
+        # Intentar con una lista de modelos compatibles
+        candidates = []
+        wanted = os.getenv("GEMINI_MODEL_ID") or _MODEL_ID
+        candidates.append(wanted)
+        # Fallbacks comunes
+        fallbacks = [
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash-001",
+            "gemini-1.5-pro-latest",
+            "gemini-1.5-pro-001",
+        ]
+        for fid in fallbacks:
+            if fid not in candidates:
+                candidates.append(fid)
+
+        last_exc: Exception | None = None
+        for mid in candidates:
+            try:
+                m = genai.GenerativeModel(mid)
+                # Verificación rápida sin costo alto
+                try:
+                    m.count_tokens("ping")
+                except Exception:
+                    pass
+                _model = m
+                return _model
+            except Exception as e:
+                last_exc = e
+                continue
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("No se pudo inicializar modelo Gemini")
     except Exception:
         try:
             current_app.logger.exception("Error inicializando modelo Gemini")
@@ -112,13 +145,16 @@ def generar_respuesta_catalogo(prompt: str, contexto: Any | None = None) -> str:
         if not texto:
             raise RuntimeError("Gemini sin contenido")
         return texto
-    except Exception:
+    except Exception as e:
         try:
             current_app.logger.exception("Fallo al generar respuesta de catalogo con Gemini")
+            # Pista útil en logs si es 404/NotFound o v1beta
+            msg = str(e)
+            if "NotFound" in msg or "404" in msg:
+                current_app.logger.error("Modelo de Gemini no encontrado. Prueba con GEMINI_MODEL_ID=gemini-1.5-flash-latest o -001")
         except Exception:
             pass
         return (
             "Puedo ayudarte a encontrar opciones de nuestro catalogo. "
             "Por favor indica si buscas libro o util escolar, autor/marca o tu presupuesto aproximado."
         )
-

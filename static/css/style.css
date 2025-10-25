@@ -149,6 +149,9 @@ body {
   width: min(1100px, 92%);
   margin: 0 auto;
   display: grid; grid-template-columns: 1fr; gap: 1.5rem;
+  /* Mejora de rendimiento cuando hay muchos productos */
+  content-visibility: auto;
+  contain-intrinsic-size: 600px;
 }
 
 /* Categorías */

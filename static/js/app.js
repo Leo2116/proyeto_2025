@@ -109,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const safeAlt = nombre.replace(/"/g, '&quot;');
     return `
       <article class="product-card" data-id="${id}">
-        <img src="${portada_url}" alt="${safeAlt}" class="product-img"
+        <img src="${portada_url}" alt="${safeAlt}" class="product-img" loading="lazy" decoding="async"
              onerror="this.onerror=null;this.src='${(String(tipo).toLowerCase().includes('libro') ? '/static/img/productos/categoria_libros.png' : '/static/img/productos/categoria_utiles.png')}';">
         <div class="product-info">
           <span class="product-type">${tipo}</span>
@@ -119,6 +119,26 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </article>
     `;
+  }
+
+  function renderProductsIncremental(list) {
+    if (!productBox) return;
+    productBox.innerHTML = '';
+    const chunk = 24; // render en tandas para mantener UI fluida
+    let i = 0;
+    function step() {
+      const frag = document.createDocumentFragment();
+      for (let c = 0; c < chunk && i < list.length; c++, i++) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = productCardHTML(list[i]);
+        frag.appendChild(wrapper.firstElementChild);
+      }
+      productBox.appendChild(frag);
+      if (i < list.length) {
+        (window.requestIdleCallback || window.requestAnimationFrame || setTimeout)(step);
+      }
+    }
+    step();
   }
 
   async function loadProducts(query = '') {
@@ -136,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const normalized = data.map(normalizeProduct);
-      if (productBox) productBox.innerHTML = normalized.map(productCardHTML).join('');
+      renderProductsIncremental(normalized);
     } catch (err) {
       console.error('Error al cargar productos:', err);
       showStatus(`Error al cargar productos: ${err.message}`, true);

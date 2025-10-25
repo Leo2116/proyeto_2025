@@ -405,6 +405,48 @@
   <script src="/static/js/app.js"></script>
   <script src="/static/js/hotfix.js"></script>
   <script>
+    // Fallback mínimo si app.js no pudo enlazar handlers (p.ej. error en Render)
+    (function(){
+      function $(id){ return document.getElementById(id); }
+      function on(doc, evt, sel, fn){
+        doc.addEventListener(evt, function(e){ const t = e.target.closest && e.target.closest(sel); if(t) fn(e, t); }, true);
+      }
+      function fetchJSON(url, opts){
+        return fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' }, opts||{}))
+          .then(r=>r.text().then(t=>({ ok:r.ok, data: t ? JSON.parse(t) : null, status:r.status })))
+          .then(p=>{ if(!p.ok || p.data==null) throw new Error((p.data&&p.data.error)||('HTTP '+p.status)); return p.data; });
+      }
+      function bind(){
+        // Abrir/cerrar carrito
+        const drawer = $('cart-drawer'); const backdrop = $('drawer-backdrop');
+        $('cart-btn')?.addEventListener('click', ()=>{ drawer?.classList.add('open'); backdrop?.classList.remove('hidden'); });
+        $('cart-close')?.addEventListener('click', ()=>{ drawer?.classList.remove('open'); backdrop?.classList.add('hidden'); });
+        backdrop?.addEventListener('click', ()=>{ drawer?.classList.remove('open'); backdrop?.classList.add('hidden'); });
+
+        // Añadir al carrito (delegado)
+        on(document, 'click', '.add-to-cart-btn', async (e, btn)=>{
+          const card = btn.closest('.product-card'); if(!card) return;
+          const id = card.getAttribute('data-id');
+          const nombre = card.querySelector('.product-name')?.textContent?.trim()||'Producto';
+          const precio = parseFloat((card.querySelector('.product-price')?.textContent||'Q0').replace(/[^\d.]/g,''))||0;
+          const img = card.querySelector('img')?.getAttribute('src');
+          try { await fetchJSON('/api/v1/cart/add', { method:'POST', body: JSON.stringify({ id, nombre, precio, portada_url: img, cantidad:1 }) }); }
+          catch(_){}
+          try { $('cart-badge')?.classList.remove('hidden'); } catch(_){ }
+          try { drawer?.classList.add('open'); backdrop?.classList.remove('hidden'); } catch(_){ }
+        });
+
+        // Abrir modal de autenticación
+        $('user-btn')?.addEventListener('click', ()=>{ $('auth-modal')?.classList.remove('hidden'); });
+        $('auth-close')?.addEventListener('click', ()=>{ $('auth-modal')?.classList.add('hidden'); });
+      }
+      // Si app.js no marcó la bandera, aplicar fallback
+      if (!window.__APP_MAIN_BOUND__) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, { once:true }); else bind();
+      }
+    })();
+  </script>
+  <script>
     // Lógica del asistente virtual (UI + llamadas a /api/v1/ia/chat)
     (function () {
       const toggleBtn = document.getElementById('assistant-toggle');

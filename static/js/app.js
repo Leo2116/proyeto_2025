@@ -830,6 +830,8 @@ document.addEventListener('DOMContentLoaded', () => {
   window.crearFacturaLocal = crearFacturaLocal;
   window.enviarChatGPT = enviarChatGPT;
 });
+// Marca para que index.html pueda saber si el main JS enganchó handlers
+try { window.__APP_MAIN_BOUND__ = true; } catch(e) {}
   const profileOrdersState = { page: 1, from: '', to: '', total: 0, email: '' };
   async function loadUserOrders(email, { append = false } = {}){
     // Formateo local para Totales (evita dependencia del fmtQ interno del DOMContentLoaded)

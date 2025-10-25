@@ -395,7 +395,8 @@
 
       attachOverrides();
       // Cargar productos existentes de la base de datos al iniciar
-      try { searchAll(''); } catch (e) { /* noop */ }
+      // Evitar cargar todo el catálogo de golpe en el arranque
+      // try { searchAll(''); } catch (e) { /* noop */ }
     })();
   </script>
 

@@ -141,6 +141,54 @@ document.addEventListener('DOMContentLoaded', () => {
     step();
   }
 
+  // Estado y helpers para render por tandas + botón "Ver más"
+  const PRODUCTS_CHUNK = 24;
+  const productsState = { list: [], rendered: 0 };
+
+  function ensureProductsActions() {
+    let actions = document.getElementById('product-results-actions');
+    if (!actions) {
+      actions = document.createElement('div');
+      actions.id = 'product-results-actions';
+      actions.style.display = 'flex';
+      actions.style.justifyContent = 'center';
+      actions.style.margin = '.75rem auto';
+      actions.style.width = 'min(1100px, 92%)';
+      const btn = document.createElement('button');
+      btn.id = 'products-more-btn';
+      btn.className = 'btn-secondary';
+      btn.textContent = 'Ver más';
+      actions.appendChild(btn);
+      // Insertar después del grid
+      const parent = document.querySelector('#product-results')?.parentNode;
+      const grid = document.getElementById('product-results');
+      if (parent && grid) parent.insertBefore(actions, grid.nextSibling);
+    }
+    return actions;
+  }
+
+  function updateMoreVisibility() {
+    const moreBtn = document.getElementById('products-more-btn');
+    if (!moreBtn) return;
+    moreBtn.style.display = (productsState.rendered < productsState.list.length) ? '' : 'none';
+  }
+
+  function renderNextProducts(count = PRODUCTS_CHUNK) {
+    if (!productBox) return;
+    const start = productsState.rendered;
+    const end = Math.min(start + count, productsState.list.length);
+    if (start >= end) { updateMoreVisibility(); return; }
+    const frag = document.createDocumentFragment();
+    for (let i = start; i < end; i++) {
+      const w = document.createElement('div');
+      w.innerHTML = productCardHTML(productsState.list[i]);
+      frag.appendChild(w.firstElementChild);
+    }
+    productBox.appendChild(frag);
+    productsState.rendered = end;
+    updateMoreVisibility();
+  }
+
   async function loadProducts(query = '') {
     if (productBox) productBox.innerHTML = '';
     showStatus(query ? `Buscando "${query}"…` : 'Cargando productos…');
@@ -155,8 +203,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const normalized = data.map(normalizeProduct);
-      renderProductsIncremental(normalized);
+      productsState.list = data.map(normalizeProduct);
+      productsState.rendered = 0;
+      ensureProductsActions();
+      renderNextProducts();
+      const moreBtn = document.getElementById('products-more-btn');
+      if (moreBtn) moreBtn.onclick = () => renderNextProducts();
     } catch (err) {
       console.error('Error al cargar productos:', err);
       showStatus(`Error al cargar productos: ${err.message}`, true);

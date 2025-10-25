@@ -37,9 +37,6 @@
     <h1>Administración de productos</h1>
     <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; margin-bottom:.5rem;">
       <a href="/" class="btn-secondary" title="Volver al inicio">← Inicio</a>
-      <button id="btn-neon-status" class="btn-secondary">Estado Neon</button>
-      <button id="btn-migrar" class="btn-secondary" title="Migrar productos del panel a Neon">Migrar SQLite → Neon</button>
-      <button id="btn-importar-pg" class="btn-secondary" title="Importar vitrina directamente a Neon">Importar vitrina → Neon</button>
     </div>
 
     <section class="admin-card">
@@ -436,9 +433,7 @@ function fillForm(row){
     // Ocultar campos legacy combinados si aún existen en el DOM
     (function(){ ['p-autor-marca','p-isbn-sku'].forEach(id=>{ const el = document.getElementById(id); if(el){ const box = el.closest('div'); if(box){ box.style.display='none'; } } }); })();
     $('btn-limpiar').onclick = ()=> limpiar();
-    $('btn-importar-pg').onclick = async ()=>{ try{ const r = await fetchJSON('/api/v1/admin/import/static-products-to-pg', { method:'POST' }); setMsg('Importados (PG): '+(r.importados||0)); cargarTabla(); }catch(e){ setMsg('No se pudo importar a PG'); } };
-    $('btn-migrar').onclick = async ()=>{ try{ const r = await fetchJSON('/api/v1/admin/migrate/sqlite-to-pg', { method:'POST' }); setMsg(`Migración: creados ${r.created||0}, actualizados ${r.updated||0}, total ${r.total||0}`); cargarTabla(); }catch(e){ setMsg('No se pudo migrar'); } };
-    $('btn-neon-status').onclick = async ()=>{ try{ const s = await fetchJSON('/api/v1/admin/neon-status'); if(!s.ok){ setMsg('Neon: ' + (s.message || 'sin conexión')); return; } setMsg(`Neon OK • productos=${s.productos} • categorías=${s.categorias||0} • materiales=${s.materiales||0} • head=${s.alembic_head||'-'}`); }catch(e){ setMsg('No se pudo consultar Neon'); } };
+    // Botones avanzados removidos por solicitud (estado/migración/importación)
     $('btn-guardar').onclick = async ()=>{
       setMsg('');
       const tipoSel = $('p-tipo').value;

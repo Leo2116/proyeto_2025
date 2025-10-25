@@ -56,26 +56,79 @@ class PGRepositorioProducto(IRepositorioProducto):
 
     def buscar_productos(self, consulta: str) -> List[Producto]:
         consulta = (consulta or '').strip()
+        def _norm(txt: str) -> str:
+            try:
+                import unicodedata
+                nf = unicodedata.normalize('NFD', txt or '')
+                return ''.join(ch for ch in nf if unicodedata.category(ch) != 'Mn').lower().strip()
+            except Exception:
+                return (txt or '').lower().strip()
+
+        key = _norm(consulta)
+        util_keys = {
+            'util', 'utiles', 'utiles escolares', 'utiles escolares', 'cuaderno', 'cuadernos',
+            'lapiz', 'lapices', 'lapíz', 'lapíces', 'borrador', 'borradores', 'sacapuntas',
+            'marcador', 'marcadores', 'pegamento', 'regla', 'tijera', 'tijeras', 'hojas',
+            'papel', 'pluma', 'boligrafo', 'boligrafos', 'boligrafo', 'bolígrafos'
+        }
+        libro_keys = {'libro', 'libros', 'biblia', 'isbn', 'autor', 'editorial', 'novela', 'cuento', 'poesia', 'poesía'}
+
         with self.Session() as s:
+            q = s.query(ProductoORM)
             if not consulta:
-                rows = s.query(ProductoORM).order_by(ProductoORM.id_producto.desc()).limit(50).all()
+                rows = q.order_by(ProductoORM.id_producto.desc()).limit(50).all()
             else:
                 like = f"%{consulta}%"
-                rows = (
-                    s.query(ProductoORM)
-                    .filter(
-                        or_(
-                            ProductoORM.nombre.ilike(like),
-                            cast(ProductoORM.isbn, String).ilike(like),
-                            cast(ProductoORM.autor, String).ilike(like),
-                            cast(ProductoORM.categoria, String).ilike(like),
-                            cast(ProductoORM.material, String).ilike(like),
+                # Si la consulta es un alias de categoría, priorizar por tipo
+                if key in util_keys or key.startswith('util'):
+                    rows = (
+                        q.filter(
+                            or_(
+                                ProductoORM.tipo == TipoProductoEnum.UTIL,
+                                # también permitir match por nombre/categoria/material
+                                or_(
+                                    ProductoORM.nombre.ilike(like),
+                                    cast(ProductoORM.categoria, String).ilike(like),
+                                    cast(ProductoORM.material, String).ilike(like),
+                                )
+                            )
                         )
+                        .order_by(ProductoORM.id_producto.desc())
+                        .limit(50)
+                        .all()
                     )
-                    .order_by(ProductoORM.id_producto.desc())
-                    .limit(50)
-                    .all()
-                )
+                elif key in libro_keys or key.startswith('lib'):
+                    rows = (
+                        q.filter(
+                            or_(
+                                ProductoORM.tipo == TipoProductoEnum.LIBRO,
+                                or_(
+                                    ProductoORM.nombre.ilike(like),
+                                    cast(ProductoORM.isbn, String).ilike(like),
+                                    cast(ProductoORM.autor, String).ilike(like),
+                                    cast(ProductoORM.editorial, String).ilike(like) if hasattr(ProductoORM, 'editorial') else False,
+                                )
+                            )
+                        )
+                        .order_by(ProductoORM.id_producto.desc())
+                        .limit(50)
+                        .all()
+                    )
+                else:
+                    rows = (
+                        q.filter(
+                            or_(
+                                ProductoORM.nombre.ilike(like),
+                                cast(ProductoORM.isbn, String).ilike(like),
+                                cast(ProductoORM.autor, String).ilike(like),
+                                cast(ProductoORM.categoria, String).ilike(like),
+                                cast(ProductoORM.material, String).ilike(like),
+                            )
+                        )
+                        .order_by(ProductoORM.id_producto.desc())
+                        .limit(50)
+                        .all()
+                    )
         return [self._to_domain(r) for r in rows]
 
     def guardar_producto(self, p: Producto) -> None:
@@ -105,4 +158,3 @@ class PGRepositorioProducto(IRepositorioProducto):
         with self.Session() as s:
             rows = s.query(ProductoORM).order_by(ProductoORM.id_producto.desc()).limit(100).all()
         return [self._to_domain(r) for r in rows]
-

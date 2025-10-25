@@ -23,7 +23,7 @@ class Producto:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convierte la entidad en un diccionario para serialización (ej: JSON o DB)."""
-        return {
+        data = {
             'id': self.id,
             'nombre': self.nombre,
             'precio': self.precio,
@@ -31,6 +31,12 @@ class Producto:
             # Añade el tipo de producto para poder recrear la subclase
             'tipo': self.__class__.__name__ 
         }
+        # Incluir portada/imagen si está disponible en la entidad
+        img = getattr(self, 'portada_url', None) or getattr(self, 'imagen_url', None)
+        if img:
+            data['portada_url'] = img
+            data['imagen_url'] = img
+        return data
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} id={self.id}, nombre='{self.nombre}'>"
@@ -72,6 +78,10 @@ class Libro(Producto):
             'paginas': self.paginas,
             'editor': self.editor,
         })
+        img = getattr(self, 'portada_url', None) or getattr(self, 'imagen_url', None)
+        if img:
+            data['portada_url'] = img
+            data['imagen_url'] = img
         return data
 
 # ==============================================================================
@@ -104,4 +114,8 @@ class UtilEscolar(Producto):
             'categoria': self.categoria,
             'marca': self.marca,
         })
+        img = getattr(self, 'portada_url', None) or getattr(self, 'imagen_url', None)
+        if img:
+            data['portada_url'] = img
+            data['imagen_url'] = img
         return data

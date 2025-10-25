@@ -10,7 +10,7 @@ from servicios.servicio_autenticacion.aplicacion.casos_uso.iniciar_sesion import
 from servicios.servicio_autenticacion.aplicacion.casos_uso.enviar_verificacion_correo import EnviarVerificacionCorreo
 
 # Importamos la implementacion del Repositorio
-from servicios.servicio_autenticacion.infraestructura.persistencia.sqlite_repositorio_usuario import SQLiteRepositorioUsuario
+from servicios.servicio_autenticacion.infraestructura.persistencia.sqlite_repositorio_usuario import SQLiteRepositorioUsuario, Session
 from servicios.servicio_autenticacion.infraestructura.clientes_externos.google_smtp_cliente import GoogleSMTPCliente
 from configuracion import Config
 from utils.jwt import create_jwt
@@ -18,6 +18,8 @@ from passlib.hash import pbkdf2_sha256 as pwd_context
 
 # Enterprise helper (opcional)
 from servicios.servicio_autenticacion.presentacion.recaptcha_enterprise import verify_enterprise
+from servicios.servicio_autenticacion.token_utils import verify_token, gen_verify_token
+from inicializar_db import UsuarioORM
 
 # ----------------------------------------------------------------------
 # INICIALIZACION Y BLUEPRINT
@@ -248,33 +250,55 @@ def login():
 
 
 @auth_bp.route('/verify', methods=['GET'])
-def verify_email():
-    """Marca la cuenta como verificada usando token + user + email por querystring."""
-    token = request.args.get('token')
-    user_id = request.args.get('user')
-    email = request.args.get('email')
-
-    if not token or not user_id or not email:
-        return jsonify({"error": "Parámetros incompletos."}), 400
-
-    ok = repositorio_usuario.verificar_cuenta_por_token(user_id, email, token)
-    if not ok:
-        return jsonify({"ok": False, "mensaje": "Token inválido o expirado."}), 400
-    return jsonify({"ok": True, "mensaje": "Cuenta verificada correctamente."}), 200
+def verify_email_query():
+    token = (request.args.get('token') or '').strip()
+    uid_qs = (request.args.get('user') or '').strip()
+    if not token:
+        return render_template('error_verificacion.html'), 400
+    uid = verify_token(token)
+    if not uid or (uid_qs and uid_qs != uid):
+        current_app.logger.info('[verify] token invalido/expirado')
+        return render_template('error_verificacion.html'), 400
+    s = Session()
+    try:
+        user = s.get(UsuarioORM, uid)
+        if not user:
+            return render_template('error_verificacion.html'), 404
+        if not user.verificado:
+            user.verificado = True
+            s.commit()
+            current_app.logger.info(f'[verify] usuario verificado uid={uid}')
+        return redirect(url_for('auth_bp.verificacion_exitosa'))
+    except Exception:
+        s.rollback()
+        current_app.logger.exception('[verify] error al verificar por query')
+        return render_template('error_verificacion.html'), 500
+    finally:
+        s.close()
 
 
 @auth_bp.route('/verify/<token>', methods=['GET'])
 def verify_email_token(token):
-    """Verifica por token en path y redirige a página de éxito."""
+    uid = verify_token((token or '').strip())
+    if not uid:
+        current_app.logger.info('[verify] token invalido/expirado (path)')
+        return render_template('error_verificacion.html'), 400
+    s = Session()
     try:
-        ok = repositorio_usuario.verificar_cuenta_por_token_simple(token)
-        if not ok:
-            return render_template("error_verificacion.html"), 400
-        # Redirigir a endpoint de éxito (plantilla simple)
+        user = s.get(UsuarioORM, uid)
+        if not user:
+            return render_template('error_verificacion.html'), 404
+        if not user.verificado:
+            user.verificado = True
+            s.commit()
+            current_app.logger.info(f'[verify] usuario verificado uid={uid}')
         return redirect(url_for('auth_bp.verificacion_exitosa'))
     except Exception:
-        current_app.logger.exception("Fallo verificación")
-        return render_template("error_verificacion.html"), 500
+        s.rollback()
+        current_app.logger.exception('[verify] error al verificar por path')
+        return render_template('error_verificacion.html'), 500
+    finally:
+        s.close()
 
 
 @auth_bp.route('/verify/success', methods=['GET'])

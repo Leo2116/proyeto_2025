@@ -9,6 +9,8 @@ from urllib.parse import urlencode
 from flask import url_for, current_app
 from uuid import uuid4
 from typing import Optional
+import os
+from servicios.servicio_autenticacion.token_utils import gen_verify_token
 
 try:
     from configuracion import Config
@@ -27,18 +29,17 @@ class EnviarVerificacionCorreo:
     def _generar_token(self) -> str:
         return uuid4().hex
 
-    def _construir_link_verificacion(self, id_usuario: str, email: str, token: str) -> str:
-        base = (getattr(Config, "APP_BASE_URL", None) or self.app_base_url or "").rstrip("/")
+    def _construir_link_verificacion(self, id_usuario: str, email: str, _token_legacy: str) -> str:
+        base = (os.getenv("APP_BASE_URL") or getattr(Config, "APP_BASE_URL", None) or self.app_base_url or "").rstrip("/")
+        token = gen_verify_token(id_usuario)
         try:
-            # Preferir nueva ruta con token en path y redirección
-            path = url_for('auth_bp.verify_email_token', token=token)
+            path = url_for('auth_bp.verify_email_query')
         except Exception:
-            # Fallback a querystring si no está registrada la ruta
-            params = urlencode({"user": id_usuario, "email": email, "token": token})
-            path = f"/api/v1/auth/verify?{params}"
-        link = f"{base}{path}"
+            path = "/api/v1/auth/verify"
+        params = urlencode({"user": id_usuario, "email": email, "token": token})
+        link = f"{base}{path}?{params}"
         try:
-            current_app.logger.info(f"Link verificación: {link}")
+            current_app.logger.info(f"[verify] link generado {link}")
         except Exception:
             pass
         return link

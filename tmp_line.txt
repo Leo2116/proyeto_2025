@@ -1,1 +1,0 @@
-        <img src="/static/img/productos/categoria_utiles.png" alt="Útiles escolares" />

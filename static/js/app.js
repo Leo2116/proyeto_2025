@@ -618,18 +618,11 @@ document.addEventListener('DOMContentLoaded', () => {
               <p class="muted">Factura <strong>${(inv && inv.numero_factura) ? inv.numero_factura : ''}</strong> — Total <strong>${fmtQ(inv && inv.total ? inv.total : snap.total)}</strong></p>
               <div class="checkout-actions">
                 <button id="success-close" class="btn-secondary">Cerrar</button>
-                <button id="success-json" class="btn-secondary">Descargar JSON</button>
                 <button id="success-print" class="btn-primary">Imprimir / PDF</button>
               </div>
             </div>`;
           const btnClose = document.getElementById('success-close');
-          const btnJson = document.getElementById('success-json');
-          const btnPrint = document.getElementById('success-print');
-          btnClose?.addEventListener('click', () => { exitCheckoutForm(); });
-          btnJson?.addEventListener('click', async () => {
-            try {
-              const snapshot = JSON.parse(localStorage.getItem('lastInvoice')||'null') || inv || {};
-              const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+
               const a = document.createElement('a');
               a.href = URL.createObjectURL(blob);
               a.download = `${(inv && inv.numero_factura) ? inv.numero_factura : 'factura'}.json`;

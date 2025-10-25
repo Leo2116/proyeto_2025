@@ -9,16 +9,10 @@ from servicios.servicio_catalogo.infraestructura.persistencia.pg_repositorio_pro
 from servicios.admin.infraestructura.tickets_repo import TicketsRepo
 from servicios.servicio_catalogo.infraestructura.persistencia.sqlite_repositorio_producto import (
     SQLiteRepositorioProducto,
-)
-
-
-ia_bp = Blueprint("ia_bp", __name__, url_prefix="/api/v1/ia")
+)\nfrom servicios.servicio_autenticacion.infraestructura.clientes_externos.google_smtp_cliente import GoogleSMTPCliente\n\n\nia_bp = Blueprint("ia_bp", __name__, url_prefix="/api/v1/ia")
 _tickets = TicketsRepo()
 _tickets.ensure_schema()
-_catalog_repo = PGRepositorioProducto()
-
-
-@ia_bp.post("/chat")
+_catalog_repo = PGRepositorioProducto()\nfrom servicios.servicio_autenticacion.infraestructura.clientes_externos.google_smtp_cliente import GoogleSMTPCliente\n\n\n@ia_bp.post("/chat")
 def ia_chat():
     data = request.get_json(silent=True) or {}
     user_msg = (data.get("message") or data.get("mensaje") or "").strip()
@@ -43,10 +37,7 @@ def _norm(s: str) -> str:
         nf = unicodedata.normalize("NFD", str(s or ""))
         return "".join(ch for ch in nf if unicodedata.category(ch) != "Mn").lower()
     except Exception:
-        return (str(s or "")).lower()
-
-
-def _is_in_domain(text: str) -> bool:
+        return (str(s or "")).lower()\nfrom servicios.servicio_autenticacion.infraestructura.clientes_externos.google_smtp_cliente import GoogleSMTPCliente\n\n\ndef _is_in_domain(text: str) -> bool:
     """Conservado por compatibilidad; no se usa actualmente."""
     enabled = (os.getenv("AI_DOMAIN_WHITELIST_ENABLED", "true").lower() in ("1", "true", "yes"))
     if not enabled:
@@ -63,10 +54,7 @@ def _is_in_domain(text: str) -> bool:
     tokens = [t.strip() for t in (raw or "").split(",") if t.strip()]
     ntokens = [_norm(t) for t in tokens]
     nt = _norm(text)
-    return any(t and t in nt for t in ntokens)
-
-
-def _is_greeting(text: str) -> bool:
+    return any(t and t in nt for t in ntokens)\nfrom servicios.servicio_autenticacion.infraestructura.clientes_externos.google_smtp_cliente import GoogleSMTPCliente\n\n\ndef _is_greeting(text: str) -> bool:
     nt = _norm(text or "")
     greetings = ("hola", "buenas", "buenos dias", "buenos días", "hello", "hi", "saludos")
     return any(nt.startswith(_norm(g)) for g in greetings) and len(nt.split()) <= 6
@@ -107,7 +95,66 @@ def _catalog_context(query: str, limit: int = 8) -> list[dict]:
         return data
     except Exception:
         return []
-# --- Pruebas rápidas ---
+
+@ia_bp.post("/ticket")
+def ia_ticket_create():
+    """Crea un ticket de soporte y envía correo a los administradores.
+    Body JSON: { message, email?, provider? }
+    """
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or data.get("mensaje") or "").strip()
+    if not message:
+        return jsonify({"ok": False, "error": "message requerido"}), 400
+    user_email = (data.get("email") or session.get("user_email") or None)
+    provider = (data.get("provider") or "chat/ia")
+
+    # Crear ticket en SQLite (persistente para logs internos)
+    try:
+        tid = _tickets.crear(
+            question=message,
+            user_email=user_email,
+            provider=provider,
+        )
+    except Exception:
+        current_app.logger.exception("Fallo creando ticket")
+        return jsonify({"ok": False, "error": "No se pudo crear el ticket"}), 500
+
+    # Notificar por correo a administradores (y opcionalmente al usuario)
+    try:
+        admins = list(getattr(current_app.config, "ADMIN_EMAILS", []) or [])
+        if not admins:
+            import os as _os
+            raw = (_os.getenv("ADMIN_EMAILS") or _os.getenv("ADMIN_EMAIL") or "").strip()
+            if raw:
+                admins = [e.strip() for e in raw.split(",") if e.strip()]
+        if admins:
+            smtp = GoogleSMTPCliente()
+            asunto = f"Nuevo ticket #{tid}"
+            html = (
+                f"<h3>Nuevo ticket</h3><p><strong>ID:</strong> {tid}</p>"
+                f"<p><strong>Usuario:</strong> {user_email or '-'} &nbsp;&nbsp;<strong>Origen:</strong> {provider}</p>"
+                f"<p><strong>Pregunta:</strong><br>{message}</p>"
+                f"<p>Panel admin: <a href=\"{getattr(current_app.config,'APP_BASE_URL','')}/admin\">Abrir</a></p>"
+            )
+            for a in admins:
+                try:
+                    smtp.enviar_correo(destinatario=a, asunto=asunto, cuerpo_html=html)
+                except Exception:
+                    current_app.logger.exception("No se pudo enviar correo de ticket a %s", a)
+        if user_email:
+            try:
+                smtp = GoogleSMTPCliente()
+                smtp.enviar_correo(
+                    destinatario=user_email,
+                    asunto=f"Recibimos tu solicitud (ticket #{tid})",
+                    cuerpo_html=f"<p>Tu solicitud fue registrada con ID <strong>#{tid}</strong>.</p><p>Mensaje:</p><blockquote>{message}</blockquote>",
+                )
+            except Exception:
+                pass
+    except Exception:
+        current_app.logger.exception("Fallo notificando ticket por correo")
+
+    return jsonify({"ok": True, "id": tid}), 201\n# --- Pruebas rápidas ---
 # IA:
 # curl -s -X POST "$APP_BASE_URL/api/v1/ia/chat" \
 #   -H "Content-Type: application/json" \

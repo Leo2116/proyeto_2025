@@ -52,7 +52,24 @@ def _validate_or_fallback_image(img, is_libro, nombre, id_prod):
             except Exception:
                 pass
         if img and isinstance(img, str) and (img.startswith('http://') or img.startswith('https://')):
-            return img
+            try:
+                import requests
+                resp = requests.get(img, timeout=8, stream=True)
+                if resp.ok:
+                    ext = '.jpg'
+                    ct = resp.headers.get('Content-Type') or ''
+                    if 'png' in ct: ext = '.png'
+                    elif 'webp' in ct: ext = '.webp'
+                    elif 'jpeg' in ct or 'jpg' in ct: ext = '.jpg'
+                    stem = (str(id_prod) or str(nombre) or 'item').strip().lower().replace(' ', '_')
+                    dest = PRODUCT_IMG_DIR / (stem + ext)
+                    with open(dest, 'wb') as f:
+                        for chunk in resp.iter_content(8192):
+                            if chunk:
+                                f.write(chunk)
+                    return '/static/img/productos/' + dest.name
+            except Exception:
+                return img
         found = _find_product_image(id_prod, nombre)
         if found:
             return found

@@ -53,7 +53,15 @@ class PGRepositorioProducto(IRepositorioProducto):
 
     def __init__(self, db_url: Optional[str] = None):
         self.db_url = db_url or Config.SQLALCHEMY_DATABASE_URI
-        self.engine = create_engine(self.db_url, future=True)
+        self.engine = create_engine(
+            self.db_url,
+            future=True,
+            pool_pre_ping=True,
+            pool_recycle=300,
+            pool_size=5,
+            max_overflow=2,
+            connect_args={}
+        )
         self.Session = sessionmaker(bind=self.engine, autoflush=False, autocommit=False, future=True)
 
     # Utilidad: reconstruir dominio a partir de ORM

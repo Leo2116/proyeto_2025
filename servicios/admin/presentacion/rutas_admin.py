@@ -443,6 +443,8 @@ def admin_upload_image():
 
 @admin_bp.post("/migrate/sqlite-to-pg")
 def admin_migrate_sqlite_to_pg():
+    if (os.getenv('ADMIN_ADVANCED_ROUTES', '0').lower() not in ('1','true','yes')):
+        return jsonify({"error": "not_found"}), 404
     if not _is_admin_request():
         return jsonify({"error": "No autorizado"}), 403
     try:
@@ -458,6 +460,8 @@ def admin_migrate_sqlite_to_pg():
 
 @admin_bp.get("/neon-status")
 def admin_neon_status():
+    if (os.getenv('ADMIN_ADVANCED_ROUTES', '0').lower() not in ('1','true','yes')):
+        return jsonify({"error": "not_found"}), 404
     if not _is_admin_request():
         return jsonify({"error": "No autorizado"}), 403
     try:
@@ -490,6 +494,8 @@ def admin_neon_status():
 
 @admin_bp.post("/import/static-products-to-pg")
 def admin_import_static_to_pg():
+    if (os.getenv('ADMIN_ADVANCED_ROUTES', '0').lower() not in ('1','true','yes')):
+        return jsonify({"error": "not_found"}), 404
     if not _is_admin_request():
         return jsonify({"error": "No autorizado"}), 403
     try:

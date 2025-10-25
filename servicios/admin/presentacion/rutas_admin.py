@@ -150,9 +150,29 @@ def admin_actualizar_estado_ticket(ticket_id: int):
 def admin_listar_productos():
     if not _is_admin():
         return jsonify({"error": "No autorizado"}), 403
-    incluir_eliminados = (request.args.get("include_deleted") or "").lower() in ("1","true","yes")
-    data = _repo.listar(incluir_eliminados=incluir_eliminados)
-    return jsonify(data), 200
+    db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+    if not db_url:
+        return jsonify({"error": "DB no configurada"}), 500
+    engine = create_engine(db_url, future=True)
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT id_producto,nombre,precio,stock,tipo,autor,isbn,material,categoria,imagen_url FROM productos ORDER BY id_producto DESC")).fetchall()
+        out = []
+        for r in rows:
+            t = str(r[4]).upper() if r[4] is not None else ''
+            tipo = 'Libro' if 'LIB' in t else 'UtilEscolar'
+            out.append({
+                "id": r[0],
+                "nombre": r[1],
+                "precio": float(r[2] or 0),
+                "tipo": tipo,
+                "autor_marca": r[5] if tipo=='Libro' else None,
+                "isbn_sku": r[6] if tipo=='Libro' else None,
+                "sinopsis": None,
+                "portada_url": r[9],
+                "stock": int(r[3] or 0),
+                "eliminado": 0,
+            })
+        return jsonify(out), 200
 
 
 def _validate_payload(payload: Dict[str, Any], is_update: bool = False):
@@ -516,9 +536,15 @@ def admin_incrementar_stock(pid: str):
     if cantidad == 0:
         return jsonify({"error": "'cantidad' no puede ser 0."}), 400
     try:
-        _repo.incrementar_stock(pid, cantidad)
+        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+        if not db_url:
+            return jsonify({"error": "DB no configurada"}), 500
+        engine = create_engine(db_url, future=True)
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE productos SET stock = COALESCE(stock,0) + :delta WHERE id_producto = :id"), {"delta": cantidad, "id": pid})
         return jsonify({"ok": True, "id": pid, "delta": cantidad}), 200
     except Exception:
+        current_app.logger.exception("PG stock fallo")
         return jsonify({"error": "No se pudo actualizar el stock."}), 500
 
 

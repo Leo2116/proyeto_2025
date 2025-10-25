@@ -1,0 +1,97 @@
+   1  """
+   2  Caso de uso: Generar token de verificación, guardarlo en el repositorio y enviar el correo.
+   3  Requiere que el repositorio implemente:
+   4   - guardar_token_verificacion(id_usuario: str, token: str) -> None
+   5   - (opcional) obtener_por_id(id_usuario) -> objeto con .email
+   6  """
+   7  
+   8  from urllib.parse import urlencode
+   9  from flask import url_for, current_app
+  10  from uuid import uuid4
+  11  from typing import Optional
+  12  
+  13  try:
+  14      from configuracion import Config
+  15  except Exception:
+  16      class Config:  # fallback mínimo
+  17          APP_BASE_URL = "http://127.0.0.1:5000"
+  18  
+  19  
+  20  class EnviarVerificacionCorreo:
+  21      def __init__(self, repositorio, servicio_correo, app_base_url: Optional[str] = None):
+  22          self.repositorio = repositorio
+  23          self.servicio_correo = servicio_correo
+  24          base = (app_base_url or getattr(Config, "APP_BASE_URL", "http://127.0.0.1:5000"))
+  25          self.app_base_url = (base or "http://127.0.0.1:5000").rstrip("/")
+  26  
+  27      def _generar_token(self) -> str:
+  28          return uuid4().hex
+  29  
+  30      def _construir_link_verificacion(self, id_usuario: str, email: str, token: str) -> str:
+  31          base = (getattr(Config, "APP_BASE_URL", None) or self.app_base_url or "").rstrip("/")
+  32          try:
+  33              # Preferir nueva ruta con token en path y redirección
+  34              path = url_for('auth_bp.verify_email_token', token=token)
+  35          except Exception:
+  36              # Fallback a querystring si no está registrada la ruta
+  37              params = urlencode({"user": id_usuario, "email": email, "token": token})
+  38              path = f"/api/v1/auth/verify?{params}"
+  39          link = f"{base}{path}"
+  40          try:
+  41              current_app.logger.info(f"Link verificación: {link}")
+  42          except Exception:
+  43              pass
+  44          return link
+  45  
+  46      def ejecutar(self, id_usuario: str, email: Optional[str] = None, *_args, **_kwargs) -> str:
+  47          """
+  48          Genera token, lo guarda y envía el correo. Devuelve el token.
+  49          - id_usuario: id del usuario (string)
+  50          - email: si se pasa, se usará como destino; si no, se intenta obtener del repositorio.
+  51          """
+  52          if email is None:
+  53              if hasattr(self.repositorio, "obtener_por_id"):
+  54                  u = self.repositorio.obtener_por_id(id_usuario)
+  55                  if not u or not getattr(u, "email", None):
+  56                      raise ValueError("No se encontró el email del usuario.")
+  57                  email = u.email
+  58              else:
+  59                  raise ValueError("Se requiere email para enviar verificación.")
+  60  
+  61          token = self._generar_token()
+  62  
+  63          if hasattr(self.repositorio, "guardar_token_verificacion"):
+  64              self.repositorio.guardar_token_verificacion(id_usuario=id_usuario, token=token)
+  65          else:
+  66              raise RuntimeError("El repositorio no implementa guardar_token_verificacion")
+  67  
+  68          link = self._construir_link_verificacion(id_usuario=id_usuario, email=email, token=token)
+  69          asunto = "Verifica tu cuenta - Librería Jehová Jiréh"
+  70          html = f"""
+  71          <html>
+  72            <body>
+  73              <p>Hola,</p>
+  74              <p>Gracias por crear una cuenta en Librería Jehová Jiréh. Haz clic en el enlace siguiente para verificar tu correo:</p>
+  75              <p><a href=\"{link}\">Verificar mi cuenta</a></p>
+  76              <p>Si no solicitaste esto, ignora este mensaje.</p>
+  77              <hr>
+  78              <p style=\"font-size:.85em;color:#666\">Si el enlace no funciona, copia y pega esta URL en tu navegador:<br/>{link}</p>
+  79            </body>
+  80          </html>
+  81          """
+  82          texto_plano = f"Verifica tu cuenta: {link}"
+  83  
+  84          # Log útil en desarrollo
+  85          try:
+  86              print(f"[VERIFICACION] Enlace: {link}")
+  87          except Exception:
+  88              pass
+  89  
+  90          # Compatibilidad con distintos nombres de método en el cliente de correo
+  91          if hasattr(self.servicio_correo, "enviar_email"):
+  92              self.servicio_correo.enviar_email(para=email, asunto=asunto, html=html, texto_plano=texto_plano)
+  93          else:
+  94              self.servicio_correo.enviar_correo(destinatario=email, asunto=asunto, cuerpo_html=html)
+  95  
+  96          return token
+

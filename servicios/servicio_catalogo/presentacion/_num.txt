@@ -1,0 +1,130 @@
+   1  # servicios/servicio_catalogo/presentacion/rutas.py
+   2  from flask import Blueprint, request, jsonify
+   3  from pathlib import Path
+   4  
+   5  # Importaciones del caso de uso y repositorio (para compatibilidad)
+   6  from servicios.servicio_catalogo.aplicacion.casos_uso.obtener_detalles_producto import ObtenerDetallesDelProducto
+   7  from servicios.servicio_catalogo.infraestructura.persistencia.pg_repositorio_producto import PGRepositorioProducto
+   8  from servicios.servicio_catalogo.infraestructura.clientes_api.google_books_cliente import GoogleBooksCliente
+   9  
+  10  catalogo_bp = Blueprint('catalogo', __name__, url_prefix='/api/v1/catalogo')
+  11  
+  12  # --------------------------------------------------------------------
+  13  # CONFIGURACIÓN DE RUTAS Y DIRECTORIOS
+  14  # --------------------------------------------------------------------
+  15  BASE_DIR = Path(__file__).resolve().parents[3]  # raíz del proyecto (donde está app.py)
+  16  IMG_DIR = BASE_DIR / "static" / "img" / "productos"
+  17  IMG_DIR.mkdir(parents=True, exist_ok=True)
+  18  
+  19  repositorio_producto = PGRepositorioProducto()
+  20  google_books_api = GoogleBooksCliente()
+  21  
+  22  obtener_detalles_uc = ObtenerDetallesDelProducto(
+  23      repositorio=repositorio_producto,
+  24      api_libros=google_books_api
+  25  )
+  26  
+  27  # --------------------------------------------------------------------
+  28  # LISTA DE PRECIOS Y PRODUCTOS (solo para vitrina)
+  29  # --------------------------------------------------------------------
+  30  PRECIOS_ESPECIFICOS = {
+  31      "cuaderno": 18.00,
+  32      "borrador": 2.00,
+  33      "lapiz": 1.50,
+  34      "sacapuntas": 2.00,
+  35      "marcadores": 25.00,
+  36      "pegamento": 5.00,
+  37      "regla": 7.00,
+  38      "tijera": 5.00,
+  39      "hojas_blancas": 15.00,
+  40      "hojas_de_colores": 20.00,
+  41      "papel_crepe": 10.00,
+  42      "pluma": 8.00
+  43  }
+  44  
+  45  # --------------------------------------------------------------------
+  46  # FUNCIÓN PARA LEER IMÁGENES Y CREAR PRODUCTOS "MOCK"
+  47  # --------------------------------------------------------------------
+  48  def productos_mock_desde_static(consulta: str | None = None) -> list[dict]:
+  49      """
+  50      Crea una lista de productos basada en los archivos dentro de static/img/productos.
+  51      Si existe un precio en PRECIOS_ESPECIFICOS, lo usa.
+  52      """
+  53      exts = (".png", ".jpg", ".jpeg", ".webp")
+  54      productos = []
+  55      DEFAULT_PRICE = 10.00
+  56  
+  57      for file in sorted(IMG_DIR.iterdir()):
+  58          if not file.is_file() or file.suffix.lower() not in exts:
+  59              continue
+  60  
+  61          stem = file.stem.lower()  # nombre sin extensión
+  62          nombre = stem.replace("_", " ").replace("-", " ").strip().title()
+  63  
+  64          # Filtrado por búsqueda
+  65          if consulta and consulta.lower() not in stem and consulta.lower() not in nombre.lower():
+  66              continue
+  67  
+  68          precio = PRECIOS_ESPECIFICOS.get(stem, DEFAULT_PRICE)
+  69  
+  70          productos.append({
+  71              "id": stem,
+  72              "nombre": nombre,
+  73              "precio": precio,
+  74              "tipo": "UtilEscolar",
+  75              "marca": "Genérico",
+  76              "portada_url": f"/static/img/productos/{file.name}"
+  77          })
+  78      return productos
+  79  
+  80  
+  81  # --------------------------------------------------------------------
+  82  # ENDPOINT: LISTAR PRODUCTOS (DB + VITRINA)
+  83  # --------------------------------------------------------------------
+  84  @catalogo_bp.route('/productos', methods=['GET'])
+  85  def buscar_productos():
+  86      consulta = request.args.get('q', '').strip()
+  87  
+  88      # Intentar productos desde DB (por compatibilidad)
+  89      try:
+  90          if consulta:
+  91              productos_db = obtener_detalles_uc.buscar_productos(consulta)
+  92          else:
+  93              productos_db = obtener_detalles_uc.ejecutar_todos()
+  94          productos_db_json = [p.to_dict() for p in productos_db]
+  95      except Exception as e:
+  96          print(f"Error al consultar DB (se ignorará): {e}")
+  97          productos_db_json = []
+  98  
+  99      # Añadir productos de vitrina (basados en imágenes)
+ 100      productos_vitrina = productos_mock_desde_static(consulta)
+ 101  
+ 102      # Combinar resultados (DB + mock)
+ 103      productos = productos_db_json + productos_vitrina
+ 104  
+ 105      return jsonify(productos), 200
+ 106  
+ 107  
+ 108  # --------------------------------------------------------------------
+ 109  # ENDPOINT: OBTENER DETALLE DE UN PRODUCTO
+ 110  # --------------------------------------------------------------------
+ 111  @catalogo_bp.route('/productos/<string:id_producto>', methods=['GET'])
+ 112  def obtener_producto(id_producto: str):
+ 113      """
+ 114      Primero intenta en la base de datos; si no existe, busca en los mock generados.
+ 115      """
+ 116      # DB
+ 117      try:
+ 118          producto = obtener_detalles_uc.ejecutar_detalles(id_producto)
+ 119          if producto:
+ 120              return jsonify(producto.to_dict()), 200
+ 121      except Exception as e:
+ 122          print(f"Error al obtener producto desde DB: {e}")
+ 123  
+ 124      # Vitrina (mock)
+ 125      for item in productos_mock_desde_static():
+ 126          if item["id"] == id_producto:
+ 127              return jsonify(item), 200
+ 128  
+ 129      return jsonify({'error': f'Producto con ID {id_producto} no encontrado.'}), 404
+

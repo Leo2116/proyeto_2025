@@ -1,0 +1,608 @@
+   1  from __future__ import annotations
+   2  
+   3  from flask import Blueprint, request, jsonify, session, current_app
+   4  from werkzeug.utils import secure_filename
+   5  from sqlalchemy import create_engine, text
+   6  import os
+   7  import re
+   8  import requests
+   9  from typing import Any, Dict
+  10  
+  11  from configuracion import Config
+  12  from utils.jwt import decode_jwt, JWTError
+  13  from servicios.admin.infraestructura.tickets_repo import TicketsRepo
+  14  
+  15  
+  16  admin_bp = Blueprint("admin_bp", __name__, url_prefix="/api/v1/admin")
+  17  _tickets_repo = TicketsRepo()
+  18  
+  19  
+  20  def _is_admin() -> bool:
+  21      email = (session.get("user_email") or "").lower().strip()
+  22      return bool(email and (email in (Config.ADMIN_EMAILS or [])))
+  23  
+  24  
+  25  def _ensure_schema():
+  26      # Solo asegurar esquema de tickets (SQLite) si se usa
+  27      try:
+  28          _tickets_repo.ensure_schema()
+  29      except Exception:
+  30          pass
+  31  
+  32  
+  33  def _is_admin_request() -> bool:
+  34      """Permite validar admin via JWT Bearer o via sesión como fallback."""
+  35      auth = (request.headers.get("Authorization") or "").strip()
+  36      if auth.lower().startswith("bearer "):
+  37          token = auth.split(" ", 1)[1].strip()
+  38          try:
+  39              payload = decode_jwt(token, getattr(Config, 'SECRET_KEY', ''))
+  40              return bool(payload.get("is_admin"))
+  41          except JWTError:
+  42              return False
+  43      return _is_admin()
+  44  
+  45  
+  46  # tickets opcional: no es necesario calentar para productos en Neon
+  47  
+  48  
+  49  @admin_bp.get("/check")
+  50  def admin_check():
+  51      # Preferir JWT si viene en Authorization: Bearer
+  52      auth = request.headers.get("Authorization") or ""
+  53      if auth.lower().startswith("bearer "):
+  54          token = auth.split(" ", 1)[1].strip()
+  55          try:
+  56              payload = decode_jwt(token, getattr(Config, 'SECRET_KEY', ''))
+  57              return jsonify({"admin": bool(payload.get("is_admin"))}), 200
+  58          except JWTError:
+  59              return jsonify({"admin": False}), 200
+  60      # Fallback compatibilidad: sesión + ADMIN_EMAILS
+  61      return jsonify({"admin": _is_admin()}), 200
+  62  
+  63  
+  64  # ---------------- Tickets -----------------
+  65  
+  66  @admin_bp.get("/tickets")
+  67  def admin_listar_tickets():
+  68      if not _is_admin_request():
+  69          return jsonify({"error": "No autorizado"}), 403
+  70      status = request.args.get("status")
+  71      page = int(request.args.get("page", "1") or 1)
+  72      limit = int(request.args.get("limit", "50") or 50)
+  73      data = _tickets_repo.listar(status=status, page=page, limit=limit)
+  74      return jsonify(data), 200
+  75  
+  76  
+  77  @admin_bp.get("/tickets/<int:ticket_id>")
+  78  def admin_obtener_ticket(ticket_id: int):
+  79      if not _is_admin_request():
+  80          return jsonify({"error": "No autorizado"}), 403
+  81      tk = _tickets_repo.obtener(ticket_id)
+  82      if not tk:
+  83          return jsonify({"error": "No existe"}), 404
+  84      return jsonify(tk), 200
+  85  
+  86  
+  87  @admin_bp.post("/tickets/<int:ticket_id>/assign")
+  88  def admin_asignar_ticket(ticket_id: int):
+  89      if not _is_admin_request():
+  90          return jsonify({"error": "No autorizado"}), 403
+  91      body = request.get_json(silent=True) or {}
+  92      assigned_to = (body.get("assigned_to") or "").strip()
+  93      if not assigned_to:
+  94          return jsonify({"error": "'assigned_to' es requerido"}), 400
+  95      assigned_by = (session.get("user_email") or "").strip() or None
+  96      notes = (body.get("notes") or None)
+  97      priority = (body.get("priority") or None)
+  98      ok = _tickets_repo.asignar(ticket_id, assigned_to, assigned_by=assigned_by, notes=notes, priority=priority)
+  99      if not ok:
+ 100          return jsonify({"error": "No se pudo asignar (ticket no existe?)"}), 404
+ 101      # Notificar por correo si assigned_to parece un email y SMTP está configurado
+ 102      try:
+ 103          if re.search(r"@", assigned_to):
+ 104              from servicios.servicio_autenticacion.infraestructura.clientes_externos.google_smtp_cliente import GoogleSMTPCliente
+ 105              smtp = GoogleSMTPCliente()
+ 106              asunto = f"Nuevo ticket asignado #{ticket_id}"
+ 107              detalle = _tickets_repo.obtener(ticket_id) or {}
+ 108              html = f"""
+ 109                  <h3>Ticket asignado</h3>
+ 110                  <p><strong>ID:</strong> {ticket_id}</p>
+ 111                  <p><strong>Pregunta:</strong> { (detalle.get('question') or '')[:400] }</p>
+ 112                  <p><strong>Estado:</strong> {detalle.get('status') or 'assigned'}</p>
+ 113                  <p><strong>Prioridad:</strong> {priority or (detalle.get('priority') or 'normal')}</p>
+ 114                  <p><strong>Notas:</strong> {notes or ''}</p>
+ 115                  <hr>
+ 116                  <p>Ir al panel: <a href="{getattr(Config, 'APP_BASE_URL', 'http://127.0.0.1:5000')}/admin">Administración</a></p>
+ 117              """
+ 118              smtp.enviar_correo(destinatario=assigned_to, asunto=asunto, cuerpo_html=html)
+ 119      except Exception:
+ 120          pass
+ 121      # Slack opcional
+ 122      try:
+ 123          webhook = os.getenv('SLACK_WEBHOOK_URL')
+ 124          if webhook:
+ 125              detalle = _tickets_repo.obtener(ticket_id) or {}
+ 126              text = f"Ticket #{ticket_id} asignado a {assigned_to}. Prioridad: {priority or detalle.get('priority') or 'normal'}."
+ 127              requests.post(webhook, json={"text": text}, timeout=5)
+ 128      except Exception:
+ 129          pass
+ 130      return jsonify({"ok": True}), 200
+ 131  
+ 132  
+ 133  @admin_bp.post("/tickets/<int:ticket_id>/status")
+ 134  def admin_actualizar_estado_ticket(ticket_id: int):
+ 135      if not _is_admin_request():
+ 136          return jsonify({"error": "No autorizado"}), 403
+ 137      body = request.get_json(silent=True) or {}
+ 138      status = (body.get("status") or "").strip()
+ 139      if status not in ("open", "assigned", "resolved", "closed"):
+ 140          return jsonify({"error": "status inválido"}), 400
+ 141      answer = body.get("answer")
+ 142      notes = body.get("notes")
+ 143      ok = _tickets_repo.actualizar_estado(ticket_id, status, answer=answer, notes=notes)
+ 144      if not ok:
+ 145          return jsonify({"error": "No se pudo actualizar"}), 404
+ 146      return jsonify({"ok": True}), 200
+ 147  
+ 148  
+ 149  @admin_bp.get("/productos")
+ 150  def admin_listar_productos():
+ 151      if not _is_admin():
+ 152          return jsonify({"error": "No autorizado"}), 403
+ 153      incluir_eliminados = (request.args.get("include_deleted") or "").lower() in ("1","true","yes")
+ 154      data = _repo.listar(incluir_eliminados=incluir_eliminados)
+ 155      return jsonify(data), 200
+ 156  
+ 157  
+ 158  def _validate_payload(payload: Dict[str, Any], is_update: bool = False):
+ 159      nombre = (payload.get("nombre") or "").strip()
+ 160      tipo = (payload.get("tipo") or "").strip() or "Producto"
+ 161      precio = float(payload.get("precio") or 0)
+ 162      autor_marca = (payload.get("autor_marca") or "").strip() or None
+ 163      isbn_sku = (payload.get("isbn_sku") or "").strip() or None
+ 164      editorial = (payload.get("editorial") or "").strip() or None
+ 165      # páginas puede venir como número o string
+ 166      paginas = None
+ 167      try:
+ 168          if payload.get("paginas") not in (None, ""):
+ 169              paginas = int(payload.get("paginas"))
+ 170      except Exception:
+ 171          paginas = None
+ 172      material = (payload.get("material") or "").strip() or None
+ 173      categoria = (payload.get("categoria") or "").strip() or None
+ 174      sinopsis = (payload.get("sinopsis") or None)
+ 175      portada_url = (payload.get("portada_url") or None)
+ 176      stock = None
+ 177      try:
+ 178          if payload.get("stock") is not None:
+ 179              stock = int(payload.get("stock") or 0)
+ 180      except Exception:
+ 181          stock = None
+ 182  
+ 183      if not is_update:
+ 184          if not nombre:
+ 185              return None, "Falta 'nombre'"
+ 186          if precio < 0:
+ 187              return None, "Precio inválido"
+ 188          if tipo not in ("Libro", "UtilEscolar", "Producto"):
+ 189              return None, "Tipo inválido"
+ 190  
+ 191      return {
+ 192          "nombre": nombre,
+ 193          "tipo": tipo,
+ 194          "precio": precio,
+ 195          "autor_marca": autor_marca,
+ 196          "isbn_sku": isbn_sku,
+ 197          "editorial": editorial,
+ 198          "paginas": paginas,
+ 199          "material": material,
+ 200          "categoria": categoria,
+ 201          "sinopsis": sinopsis,
+ 202          "portada_url": portada_url,
+ 203          "stock": stock,
+ 204      }, None
+ 205  
+ 206  
+ 207  @admin_bp.post("/productos")
+ 208  def admin_crear_producto():
+ 209      if not _is_admin():
+ 210          return jsonify({"error": "No autorizado"}), 403
+ 211      payload = request.get_json(silent=True) or {}
+ 212      data, err = _validate_payload(payload)
+ 213      if err:
+ 214          return jsonify({"error": err}), 400
+ 215  
+ 216      # Crear en Postgres (Neon)
+ 217      try:
+ 218          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 219          if db_url:
+ 220              engine = create_engine(db_url, future=True)
+ 221              with engine.begin() as conn:
+ 222                  row = conn.execute(text("SELECT COALESCE(MAX(CAST(id_producto AS INTEGER)),0)+1 FROM productos")).first()
+ 223                  pid = str(int(row[0]))
+ 224                  tipo = 'LIBRO' if data.get('tipo')=='Libro' else 'UTIL'
+ 225                  conn.execute(text(
+ 226                      """
+ 227                      INSERT INTO productos (id_producto,nombre,precio,stock,tipo,autor,isbn,material,categoria,imagen_url)
+ 228                      VALUES (:id,:nombre,:precio,:stock,:tipo,:autor,:isbn,:material,:categoria,:img)
+ 229                      """
+ 230                  ), {
+ 231                      'id': pid,
+ 232                      'nombre': data.get('nombre'),
+ 233                      'precio': float(data.get('precio') or 0),
+ 234                      'stock': int(data.get('stock') or 0),
+ 235                      'tipo': tipo,
+ 236                      'autor': data.get('autor_marca') if data.get('tipo')=='Libro' else None,
+ 237                      'isbn': data.get('isbn_sku') if data.get('tipo')=='Libro' else None,
+ 238                      'material': data.get('material') if data.get('tipo')=='UtilEscolar' else None,
+ 239                      'categoria': data.get('categoria') if data.get('tipo')=='UtilEscolar' else None,
+ 240                      'img': data.get('portada_url')
+ 241                  })
+ 242                  return jsonify({"ok": True, "id": pid}), 201
+ 243      except Exception:
+ 244          current_app.logger.exception("PG crear producto fallo")
+ 245          return jsonify({"error": "No se pudo crear"}), 500
+ 246  
+ 247  
+ 248  @admin_bp.put("/productos/<string:pid>")
+ 249  def admin_actualizar_producto(pid: str):
+ 250      if not _is_admin():
+ 251          return jsonify({"error": "No autorizado"}), 403
+ 252      payload = request.get_json(silent=True) or {}
+ 253      data, err = _validate_payload(payload, is_update=True)
+ 254      if err:
+ 255          return jsonify({"error": err}), 400
+ 256      # Actualizar en Postgres (Neon)
+ 257      try:
+ 258          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 259          if db_url:
+ 260              engine = create_engine(db_url, future=True)
+ 261              with engine.begin() as conn:
+ 262                  fields = {
+ 263                      'nombre': data.get('nombre'),
+ 264                      'precio': float(data.get('precio')) if ('precio' in data) else None,
+ 265                      'stock': int(data.get('stock')) if ('stock' in data) else None,
+ 266                      'imagen_url': data.get('portada_url'),
+ 267                  }
+ 268                  if data.get('tipo')=='Libro':
+ 269                      fields.update({'tipo': 'LIBRO', 'autor': data.get('autor_marca'), 'isbn': data.get('isbn_sku'), 'material': None, 'categoria': None})
+ 270                  elif data.get('tipo')=='UtilEscolar':
+ 271                      fields.update({'tipo': 'UTIL', 'autor': None, 'isbn': None, 'material': data.get('material'), 'categoria': data.get('categoria')})
+ 272                  sets = ",".join([f"{k} = :{k}" for k,v in fields.items() if v is not None])
+ 273                  if sets:
+ 274                      params = {k:v for k,v in fields.items() if v is not None}
+ 275                      params['id'] = pid
+ 276                      conn.execute(text(f"UPDATE productos SET {sets} WHERE id_producto = :id"), params)
+ 277                  return jsonify({"ok": True, "id": pid}), 200
+ 278      except Exception:
+ 279          current_app.logger.exception("PG actualizar producto fallo")
+ 280          return jsonify({"error": "No se pudo actualizar"}), 500
+ 281  
+ 282  
+ 283  @admin_bp.delete("/productos/<string:pid>")
+ 284  def admin_eliminar_producto(pid: str):
+ 285      if not _is_admin():
+ 286          return jsonify({"error": "No autorizado"}), 403
+ 287      try:
+ 288          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 289          if not db_url:
+ 290              return jsonify({"error": "DB no configurada"}), 500
+ 291          engine = create_engine(db_url, future=True)
+ 292          with engine.begin() as conn:
+ 293              conn.execute(text("DELETE FROM productos WHERE id_producto = :id"), {"id": pid})
+ 294              return jsonify({"ok": True}), 200
+ 295      except Exception:
+ 296          current_app.logger.exception("PG eliminar producto fallo")
+ 297          return jsonify({"error": "No se pudo eliminar"}), 500
+ 298  
+ 299  
+ 300  # ---------------- Catálogos (categorías/materiales) -----------------
+ 301  
+ 302  @admin_bp.get("/catalog/categories")
+ 303  def admin_list_categories():
+ 304      if not _is_admin_request():
+ 305          return jsonify({"error": "No autorizado"}), 403
+ 306      try:
+ 307          # Preferir Postgres si está disponible
+ 308          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 309          if db_url:
+ 310              engine = create_engine(db_url, future=True)
+ 311              with engine.connect() as conn:
+ 312                  rows = conn.execute(text("SELECT id, nombre FROM catalog_categorias ORDER BY nombre ASC")).fetchall()
+ 313                  return jsonify([{"id": int(r[0]), "nombre": r[1]} for r in rows]), 200
+ 314          return jsonify([]), 200
+ 315      except Exception:
+ 316          return jsonify([]), 200
+ 317  
+ 318  
+ 319  @admin_bp.post("/catalog/categories")
+ 320  def admin_create_category():
+ 321      if not _is_admin_request():
+ 322          return jsonify({"error": "No autorizado"}), 403
+ 323      body = request.get_json(silent=True) or {}
+ 324      name = (body.get("nombre") or body.get("name") or "").strip()
+ 325      if not name:
+ 326          return jsonify({"error": "'nombre' es requerido"}), 400
+ 327      try:
+ 328          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 329          if db_url:
+ 330              engine = create_engine(db_url, future=True)
+ 331              with engine.begin() as conn:
+ 332                  conn.execute(text("INSERT INTO catalog_categorias(nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": name})
+ 333                  row = conn.execute(text("SELECT id FROM catalog_categorias WHERE nombre=:n"), {"n": name}).first()
+ 334                  return jsonify({"ok": True, "id": int(row[0]) if row else None, "nombre": name}), 201
+ 335          return jsonify({"error": "DB no configurada"}), 500
+ 336      except Exception:
+ 337          return jsonify({"error": "No se pudo crear"}), 500
+ 338  
+ 339  
+ 340  @admin_bp.get("/catalog/materials")
+ 341  def admin_list_materials():
+ 342      if not _is_admin_request():
+ 343          return jsonify({"error": "No autorizado"}), 403
+ 344      try:
+ 345          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 346          if db_url:
+ 347              engine = create_engine(db_url, future=True)
+ 348              with engine.connect() as conn:
+ 349                  rows = conn.execute(text("SELECT id, nombre FROM catalog_materiales ORDER BY nombre ASC")).fetchall()
+ 350                  return jsonify([{"id": int(r[0]), "nombre": r[1]} for r in rows]), 200
+ 351          return jsonify([]), 200
+ 352      except Exception:
+ 353          return jsonify([]), 200
+ 354  
+ 355  
+ 356  @admin_bp.post("/catalog/materials")
+ 357  def admin_create_material():
+ 358      if not _is_admin_request():
+ 359          return jsonify({"error": "No autorizado"}), 403
+ 360      body = request.get_json(silent=True) or {}
+ 361      name = (body.get("nombre") or body.get("name") or "").strip()
+ 362      if not name:
+ 363          return jsonify({"error": "'nombre' es requerido"}), 400
+ 364      try:
+ 365          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 366          if db_url:
+ 367              engine = create_engine(db_url, future=True)
+ 368              with engine.begin() as conn:
+ 369                  conn.execute(text("INSERT INTO catalog_materiales(nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": name})
+ 370                  row = conn.execute(text("SELECT id FROM catalog_materiales WHERE nombre=:n"), {"n": name}).first()
+ 371                  return jsonify({"ok": True, "id": int(row[0]) if row else None, "nombre": name}), 201
+ 372          return jsonify({"error": "DB no configurada"}), 500
+ 373      except Exception:
+ 374          return jsonify({"error": "No se pudo crear"}), 500
+ 375  
+ 376  
+ 377  # ---------------- Upload de imágenes -----------------
+ 378  
+ 379  @admin_bp.post("/upload")
+ 380  def admin_upload_image():
+ 381      if not _is_admin_request():
+ 382          return jsonify({"error": "No autorizado"}), 403
+ 383      if 'file' not in request.files:
+ 384          return jsonify({"error": "archivo 'file' es requerido (multipart/form-data)"}), 400
+ 385      f = request.files['file']
+ 386      if not f or f.filename == '':
+ 387          return jsonify({"error": "Archivo vacío"}), 400
+ 388      # Aceptar imágenes comunes
+ 389      allowed = {'.png', '.jpg', '.jpeg', '.webp'}
+ 390      ext = ('.' + f.filename.rsplit('.', 1)[-1].lower()) if '.' in f.filename else ''
+ 391      if ext not in allowed:
+ 392          return jsonify({"error": "Formato no permitido"}), 400
+ 393      try:
+ 394          from pathlib import Path
+ 395          from configuracion import Config
+ 396          base_dir = Path(__file__).resolve().parents[3]
+ 397          img_dir = base_dir / 'static' / 'img' / 'productos'
+ 398          img_dir.mkdir(parents=True, exist_ok=True)
+ 399          fname = secure_filename(f.filename)
+ 400          # Evitar sobrescribir: si existe, añade sufijo incremental
+ 401          dest = img_dir / fname
+ 402          if dest.exists():
+ 403              stem = dest.stem
+ 404              i = 1
+ 405              while True:
+ 406                  alt = img_dir / f"{stem}_{i}{dest.suffix}"
+ 407                  if not alt.exists():
+ 408                      dest = alt
+ 409                      break
+ 410                  i += 1
+ 411          f.save(str(dest))
+ 412          url = f"/static/img/productos/{dest.name}"
+ 413          return jsonify({"ok": True, "url": url}), 201
+ 414      except Exception:
+ 415          current_app.logger.exception("Upload fallo")
+ 416          return jsonify({"error": "No se pudo subir"}), 500
+ 417  
+ 418  
+ 419  # (El flujo de importación directo a Neon está en /import/static-products-to-pg)
+ 420  
+ 421  
+ 422  # ---------------- Migración SQLite → Postgres -----------------
+ 423  
+ 424  @admin_bp.post("/migrate/sqlite-to-pg")
+ 425  def admin_migrate_sqlite_to_pg():
+ 426      if not _is_admin_request():
+ 427          return jsonify({"error": "No autorizado"}), 403
+ 428      try:
+ 429          from servicios.admin.infraestructura.pg_migrator import migrate_sqlite_admin_to_postgres
+ 430          result = migrate_sqlite_admin_to_postgres()
+ 431          return jsonify({"ok": True, **result}), 200
+ 432      except Exception as e:
+ 433          current_app.logger.exception("Migración SQLite→PG fallo")
+ 434          return jsonify({"error": "No se pudo migrar", "detail": str(e)}), 500
+ 435  
+ 436  
+ 437  # ---------------- Estado Neon (conteos) -----------------
+ 438  
+ 439  @admin_bp.get("/neon-status")
+ 440  def admin_neon_status():
+ 441      if not _is_admin_request():
+ 442          return jsonify({"error": "No autorizado"}), 403
+ 443      try:
+ 444          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 445          if not db_url:
+ 446              return jsonify({"ok": False, "message": "Sin SQLALCHEMY_DATABASE_URI"}), 200
+ 447          engine = create_engine(db_url, future=True)
+ 448          with engine.connect() as conn:
+ 449              cnt = conn.execute(text("SELECT COUNT(1) FROM productos")).scalar() or 0
+ 450              cats = 0
+ 451              mats = 0
+ 452              try:
+ 453                  cats = conn.execute(text("SELECT COUNT(1) FROM catalog_categorias")).scalar() or 0
+ 454                  mats = conn.execute(text("SELECT COUNT(1) FROM catalog_materiales")).scalar() or 0
+ 455              except Exception:
+ 456                  pass
+ 457              head = None
+ 458              try:
+ 459                  row = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).first()
+ 460                  head = row[0] if row else None
+ 461              except Exception:
+ 462                  pass
+ 463          return jsonify({"ok": True, "productos": int(cnt), "categorias": int(cats), "materiales": int(mats), "alembic_head": head}), 200
+ 464      except Exception:
+ 465          current_app.logger.exception("neon-status fallo")
+ 466          return jsonify({"ok": False, "message": "error"}), 500
+ 467  
+ 468  
+ 469  # ---------------- Importar vitrina → Postgres directo -----------------
+ 470  
+ 471  @admin_bp.post("/import/static-products-to-pg")
+ 472  def admin_import_static_to_pg():
+ 473      if not _is_admin_request():
+ 474          return jsonify({"error": "No autorizado"}), 403
+ 475      try:
+ 476          from pathlib import Path
+ 477          from servicios.servicio_catalogo.presentacion.rutas import PRECIOS_ESPECIFICOS
+ 478          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 479          if not db_url:
+ 480              return jsonify({"error": "Sin SQLALCHEMY_DATABASE_URI"}), 400
+ 481          engine = create_engine(db_url, future=True)
+ 482          img_dir = Path(__file__).resolve().parents[3] / 'static' / 'img' / 'productos'
+ 483          exts = {'.png', '.jpg', '.jpeg', '.webp'}
+ 484          created = 0
+ 485          with engine.begin() as conn:
+ 486              for file in sorted(img_dir.iterdir()):
+ 487                  if not file.is_file() or file.suffix.lower() not in exts:
+ 488                      continue
+ 489                  stem = file.stem
+ 490                  nombre = stem.replace('_', ' ').replace('-', ' ').strip().title()
+ 491                  precio = float(PRECIOS_ESPECIFICOS.get(stem.lower(), 10.0))
+ 492                  # Insertar si no existe
+ 493                  conn.execute(text(
+ 494                      """
+ 495                      INSERT INTO productos (id_producto,nombre,precio,stock,tipo,autor,isbn,material,categoria,imagen_url)
+ 496                      VALUES (:id,:nombre,:precio,:stock,'UTIL',NULL,NULL,NULL,NULL,:img)
+ 497                      ON CONFLICT (id_producto) DO NOTHING
+ 498                      """
+ 499                  ), {"id": stem, "nombre": nombre, "precio": precio, "stock": 0, "img": f"/static/img/productos/{file.name}"})
+ 500                  created += 1
+ 501          return jsonify({"ok": True, "importados": created}), 200
+ 502      except Exception:
+ 503          current_app.logger.exception("import static to pg fallo")
+ 504          return jsonify({"error": "No se pudo importar a PG"}), 500
+ 505  
+ 506  
+ 507  @admin_bp.post("/productos/<string:pid>/stock")
+ 508  def admin_incrementar_stock(pid: str):
+ 509      if not _is_admin():
+ 510          return jsonify({"error": "No autorizado"}), 403
+ 511      body = request.get_json(silent=True) or {}
+ 512      try:
+ 513          cantidad = int(body.get("cantidad") or 0)
+ 514      except Exception:
+ 515          return jsonify({"error": "'cantidad' debe ser entero."}), 400
+ 516      if cantidad == 0:
+ 517          return jsonify({"error": "'cantidad' no puede ser 0."}), 400
+ 518      try:
+ 519          _repo.incrementar_stock(pid, cantidad)
+ 520          return jsonify({"ok": True, "id": pid, "delta": cantidad}), 200
+ 521      except Exception:
+ 522          return jsonify({"error": "No se pudo actualizar el stock."}), 500
+ 523  
+ 524  
+ 525  @admin_bp.get("/diag")
+ 526  def admin_diag():
+ 527      """Diagnóstico básico (solo admin): DB reachable, alembic head, claves presentes.
+ 528      No expone secretos ni datos sensibles.
+ 529      """
+ 530      if not _is_admin_request():
+ 531          return jsonify({"error": "No autorizado"}), 403
+ 532      # Datos base
+ 533      info = {
+ 534          "app_base_url": getattr(Config, "APP_BASE_URL", None),
+ 535          "recaptcha_site_key_len": len(getattr(Config, "RECAPTCHA_SITE_KEY", "") or ""),
+ 536          "hostname": request.host,
+ 537      }
+ 538      # DB checks
+ 539      try:
+ 540          from sqlalchemy import create_engine, text
+ 541          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 542          engine = create_engine(db_url, future=True)
+ 543          with engine.connect() as conn:
+ 544              head = None
+ 545              try:
+ 546                  res = conn.execute(text("select version_num from alembic_version limit 1"))
+ 547                  row = res.first()
+ 548                  head = row[0] if row else None
+ 549              except Exception:
+ 550                  head = None
+ 551              who = conn.execute(text("select current_user, current_database(), current_schema()"))
+ 552              cu, cd, cs = who.first()
+ 553              info.update({
+ 554                  "db_ok": True,
+ 555                  "alembic_head": head,
+ 556                  "db_user": cu,
+ 557                  "db_name": cd,
+ 558                  "db_schema": cs,
+ 559                  "db_driver": engine.dialect.name,
+ 560              })
+ 561      except Exception as e:
+ 562          info.update({"db_ok": False, "db_error": str(e)})
+ 563      return jsonify(info), 200
+ 564  
+ 565  
+ 566  @admin_bp.get("/diag_public")
+ 567  def public_diag():
+ 568      """Diagnóstico básico público con token: /api/v1/admin/diag_public?token=XYZ
+ 569      Usa el env DIAG_TOKEN para autorizar; no expone secretos.
+ 570      """
+ 571      token = (request.args.get("token") or "").strip()
+ 572      expected = (os.getenv("DIAG_TOKEN") or "").strip()
+ 573      if not expected or token != expected:
+ 574          return jsonify({"error": "No autorizado"}), 403
+ 575  
+ 576      info = {
+ 577          "app_base_url": getattr(Config, "APP_BASE_URL", None),
+ 578          "recaptcha_site_key_len": len(getattr(Config, "RECAPTCHA_SITE_KEY", "") or ""),
+ 579          "hostname": request.host,
+ 580      }
+ 581      try:
+ 582          from sqlalchemy import create_engine, text
+ 583          db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+ 584          engine = create_engine(db_url, future=True)
+ 585          with engine.connect() as conn:
+ 586              head = None
+ 587              try:
+ 588                  res = conn.execute(text("select version_num from alembic_version limit 1"))
+ 589                  row = res.first()
+ 590                  head = row[0] if row else None
+ 591              except Exception:
+ 592                  head = None
+ 593              who = conn.execute(text("select current_user, current_database(), current_schema()"))
+ 594              cu, cd, cs = who.first()
+ 595              info.update({
+ 596                  "db_ok": True,
+ 597                  "alembic_head": head,
+ 598                  "db_user": cu,
+ 599                  "db_name": cd,
+ 600                  "db_schema": cs,
+ 601                  "db_driver": engine.dialect.name,
+ 602              })
+ 603      except Exception as e:
+ 604          info.update({"db_ok": False, "db_error": str(e)})
+ 605      return jsonify(info), 200
+ 606  
+ 607  
+

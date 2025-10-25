@@ -1,0 +1,108 @@
+   1  # servicios/servicio_catalogo/dominio/producto.py
+   2  
+   3  from typing import List, Dict, Any, Optional 
+   4  import uuid
+   5  
+   6  # ==============================================================================
+   7  # CLASE BASE DEL DOMINIO: PRODUCTO
+   8  # Define las propiedades comunes que todo lo que se vende en la librería debe tener.
+   9  # ==============================================================================
+  10  class Producto:
+  11      """Entidad base de dominio para cualquier producto del catálogo."""
+  12      def __init__(self, 
+  13                   nombre: str, 
+  14                   precio: float, 
+  15                   stock: int, 
+  16                   id: Optional[str] = None): # Ahora Optional está definido
+  17          
+  18          # El ID se genera automáticamente si no se provee (útil para nuevos productos)
+  19          self.id = id if id is not None else str(uuid.uuid4())
+  20          self.nombre = nombre
+  21          self.precio = precio
+  22          self.stock = stock
+  23  
+  24      def to_dict(self) -> Dict[str, Any]:
+  25          """Convierte la entidad en un diccionario para serialización (ej: JSON o DB)."""
+  26          return {
+  27              'id': self.id,
+  28              'nombre': self.nombre,
+  29              'precio': self.precio,
+  30              'stock': self.stock,
+  31              # Añade el tipo de producto para poder recrear la subclase
+  32              'tipo': self.__class__.__name__ 
+  33          }
+  34  
+  35      def __repr__(self) -> str:
+  36          return f"<{self.__class__.__name__} id={self.id}, nombre='{self.nombre}'>"
+  37  
+  38  # ==============================================================================
+  39  # SUBCLASE: LIBRO (Hereda de Producto)
+  40  # Agrega atributos específicos de un libro (ISBN, autor).
+  41  # ==============================================================================
+  42  class Libro(Producto):
+  43      """Representa un libro en el catálogo."""
+  44      def __init__(self, 
+  45                   nombre: str, 
+  46                   precio: float, 
+  47                   stock: int, 
+  48                   isbn: str, # Identificador específico de libros
+  49                   autor: str, 
+  50                   id: Optional[str] = None, 
+  51                   descripcion: str = None, 
+  52                   paginas: int = None, 
+  53                   editor: str = None):
+  54          
+  55          # Inicializa las propiedades de la clase base Producto
+  56          super().__init__(nombre, precio, stock, id)
+  57          
+  58          # Propiedades específicas de Libro
+  59          self.isbn = isbn
+  60          self.autor = autor
+  61          # Propiedades opcionales que se pueden enriquecer con la API de Google Books
+  62          self.descripcion = descripcion
+  63          self.paginas = paginas
+  64          self.editor = editor
+  65          
+  66      def to_dict(self) -> Dict[str, Any]:
+  67          data = super().to_dict()
+  68          data.update({
+  69              'isbn': self.isbn,
+  70              'autor': self.autor,
+  71              'descripcion': self.descripcion,
+  72              'paginas': self.paginas,
+  73              'editor': self.editor,
+  74          })
+  75          return data
+  76  
+  77  # ==============================================================================
+  78  # SUBCLASE: UTIL ESCOLAR (Hereda de Producto)
+  79  # Agrega atributos específicos de útiles (material, marca).
+  80  # ==============================================================================
+  81  class UtilEscolar(Producto):
+  82      """Representa un útil escolar en el catálogo."""
+  83      def __init__(self, 
+  84                   nombre: str, 
+  85                   precio: float, 
+  86                   stock: int, 
+  87                   sku: str, # Identificador específico de útiles (Stock Keeping Unit)
+  88                   categoria: str, 
+  89                   marca: str, 
+  90                   id: Optional[str] = None): # Ahora Optional está definido
+  91  
+  92          # Inicializa las propiedades de la clase base Producto
+  93          super().__init__(nombre, precio, stock, id)
+  94  
+  95          # Propiedades específicas de UtilEscolar
+  96          self.sku = sku
+  97          self.categoria = categoria
+  98          self.marca = marca
+  99  
+ 100      def to_dict(self) -> Dict[str, Any]:
+ 101          data = super().to_dict()
+ 102          data.update({
+ 103              'sku': self.sku,
+ 104              'categoria': self.categoria,
+ 105              'marca': self.marca,
+ 106          })
+ 107          return data
+

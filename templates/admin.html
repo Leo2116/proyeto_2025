@@ -142,7 +142,6 @@
       <div class="admin-actions" style="margin-top:.75rem; gap:.5rem; display:flex;">
         <button id="btn-guardar" class="btn-primary">Guardar</button>
         <button id="btn-limpiar" class="btn-secondary">Limpiar</button>
-        <button id="btn-importar" class="btn-secondary" title="Importar imágenes de vitrina a la base">Importar vitrina → DB</button>
       </div>
       <p id="admin-msg" class="muted" style="margin-top:.5rem;"></p>
     </section>
@@ -437,7 +436,6 @@ function fillForm(row){
     // Ocultar campos legacy combinados si aún existen en el DOM
     (function(){ ['p-autor-marca','p-isbn-sku'].forEach(id=>{ const el = document.getElementById(id); if(el){ const box = el.closest('div'); if(box){ box.style.display='none'; } } }); })();
     $('btn-limpiar').onclick = ()=> limpiar();
-    $('btn-importar').onclick = async ()=>{ try{ const r = await fetchJSON('/api/v1/admin/import/static-products', { method:'POST' }); setMsg('Importados: '+(r.importados||0)); cargarTabla(); }catch(e){ setMsg('No se pudo importar'); } };
     $('btn-importar-pg').onclick = async ()=>{ try{ const r = await fetchJSON('/api/v1/admin/import/static-products-to-pg', { method:'POST' }); setMsg('Importados (PG): '+(r.importados||0)); cargarTabla(); }catch(e){ setMsg('No se pudo importar a PG'); } };
     $('btn-migrar').onclick = async ()=>{ try{ const r = await fetchJSON('/api/v1/admin/migrate/sqlite-to-pg', { method:'POST' }); setMsg(`Migración: creados ${r.created||0}, actualizados ${r.updated||0}, total ${r.total||0}`); cargarTabla(); }catch(e){ setMsg('No se pudo migrar'); } };
     $('btn-neon-status').onclick = async ()=>{ try{ const s = await fetchJSON('/api/v1/admin/neon-status'); if(!s.ok){ setMsg('Neon: ' + (s.message || 'sin conexión')); return; } setMsg(`Neon OK • productos=${s.productos} • categorías=${s.categorias||0} • materiales=${s.materiales||0} • head=${s.alembic_head||'-'}`); }catch(e){ setMsg('No se pudo consultar Neon'); } };

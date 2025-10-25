@@ -10,13 +10,10 @@ from typing import Any, Dict
 
 from configuracion import Config
 from utils.jwt import decode_jwt, JWTError
-from servicios.admin.infraestructura.productos_repo import AdminProductosRepo
 from servicios.admin.infraestructura.tickets_repo import TicketsRepo
 
 
 admin_bp = Blueprint("admin_bp", __name__, url_prefix="/api/v1/admin")
-
-_repo = AdminProductosRepo()
 _tickets_repo = TicketsRepo()
 
 
@@ -26,8 +23,11 @@ def _is_admin() -> bool:
 
 
 def _ensure_schema():
-    _repo.ensure_schema()
-    _tickets_repo.ensure_schema()
+    # Solo asegurar esquema de tickets (SQLite) si se usa
+    try:
+        _tickets_repo.ensure_schema()
+    except Exception:
+        pass
 
 
 def _is_admin_request() -> bool:
@@ -43,12 +43,7 @@ def _is_admin_request() -> bool:
     return _is_admin()
 
 
-@admin_bp.before_app_request
-def _warmup_schema():
-    try:
-        _ensure_schema()
-    except Exception:
-        pass
+# tickets opcional: no es necesario calentar para productos en Neon
 
 
 @admin_bp.get("/check")
@@ -218,7 +213,7 @@ def admin_crear_producto():
     if err:
         return jsonify({"error": err}), 400
 
-    # Intentar crear en Postgres (Neon); fallback a SQLite admin
+    # Crear en Postgres (Neon)
     try:
         db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
         if db_url:
@@ -246,11 +241,7 @@ def admin_crear_producto():
                 })
                 return jsonify({"ok": True, "id": pid}), 201
     except Exception:
-        pass
-    try:
-        pid = _repo.crear_auto(data)
-        return jsonify({"ok": True, "id": pid}), 201
-    except Exception:
+        current_app.logger.exception("PG crear producto fallo")
         return jsonify({"error": "No se pudo crear"}), 500
 
 
@@ -262,7 +253,7 @@ def admin_actualizar_producto(pid: str):
     data, err = _validate_payload(payload, is_update=True)
     if err:
         return jsonify({"error": err}), 400
-    # Intentar actualizar en Postgres (Neon); fallback a SQLite
+    # Actualizar en Postgres (Neon)
     try:
         db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
         if db_url:
@@ -285,11 +276,8 @@ def admin_actualizar_producto(pid: str):
                     conn.execute(text(f"UPDATE productos SET {sets} WHERE id_producto = :id"), params)
                 return jsonify({"ok": True, "id": pid}), 200
     except Exception:
-        pass
-    if not _repo.existe(pid):
-        return jsonify({"error": "No existe"}), 404
-    _repo.actualizar(pid, data)
-    return jsonify({"ok": True, "id": pid}), 200
+        current_app.logger.exception("PG actualizar producto fallo")
+        return jsonify({"error": "No se pudo actualizar"}), 500
 
 
 @admin_bp.delete("/productos/<string:pid>")
@@ -298,15 +286,15 @@ def admin_eliminar_producto(pid: str):
         return jsonify({"error": "No autorizado"}), 403
     try:
         db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
-        if db_url:
-            engine = create_engine(db_url, future=True)
-            with engine.begin() as conn:
-                conn.execute(text("DELETE FROM productos WHERE id_producto = :id"), {"id": pid})
-                return jsonify({"ok": True}), 200
+        if not db_url:
+            return jsonify({"error": "DB no configurada"}), 500
+        engine = create_engine(db_url, future=True)
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM productos WHERE id_producto = :id"), {"id": pid})
+            return jsonify({"ok": True}), 200
     except Exception:
-        pass
-    _repo.eliminar(pid)
-    return jsonify({"ok": True}), 200
+        current_app.logger.exception("PG eliminar producto fallo")
+        return jsonify({"error": "No se pudo eliminar"}), 500
 
 
 # ---------------- Catálogos (categorías/materiales) -----------------
@@ -323,8 +311,7 @@ def admin_list_categories():
             with engine.connect() as conn:
                 rows = conn.execute(text("SELECT id, nombre FROM catalog_categorias ORDER BY nombre ASC")).fetchall()
                 return jsonify([{"id": int(r[0]), "nombre": r[1]} for r in rows]), 200
-        # Fallback a SQLite admin
-        return jsonify(_repo.listar_categorias()), 200
+        return jsonify([]), 200
     except Exception:
         return jsonify([]), 200
 
@@ -339,14 +326,13 @@ def admin_create_category():
         return jsonify({"error": "'nombre' es requerido"}), 400
     try:
         db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
-        if db_url:
-            engine = create_engine(db_url, future=True)
-            with engine.begin() as conn:
-                conn.execute(text("INSERT INTO catalog_categorias(nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": name})
-                row = conn.execute(text("SELECT id FROM catalog_categorias WHERE nombre=:n"), {"n": name}).first()
-                return jsonify({"ok": True, "id": int(row[0]) if row else None, "nombre": name}), 201
-        cid = _repo.get_or_create_categoria(name)
-        return jsonify({"ok": True, "id": cid, "nombre": name}), 201
+          if db_url:
+              engine = create_engine(db_url, future=True)
+              with engine.begin() as conn:
+                  conn.execute(text("INSERT INTO catalog_categorias(nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": name})
+                  row = conn.execute(text("SELECT id FROM catalog_categorias WHERE nombre=:n"), {"n": name}).first()
+                  return jsonify({"ok": True, "id": int(row[0]) if row else None, "nombre": name}), 201
+          return jsonify({"error": "DB no configurada"}), 500
     except Exception:
         return jsonify({"error": "No se pudo crear"}), 500
 
@@ -362,7 +348,7 @@ def admin_list_materials():
             with engine.connect() as conn:
                 rows = conn.execute(text("SELECT id, nombre FROM catalog_materiales ORDER BY nombre ASC")).fetchall()
                 return jsonify([{"id": int(r[0]), "nombre": r[1]} for r in rows]), 200
-        return jsonify(_repo.listar_materiales()), 200
+        return jsonify([]), 200
     except Exception:
         return jsonify([]), 200
 
@@ -383,8 +369,7 @@ def admin_create_material():
                 conn.execute(text("INSERT INTO catalog_materiales(nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": name})
                 row = conn.execute(text("SELECT id FROM catalog_materiales WHERE nombre=:n"), {"n": name}).first()
                 return jsonify({"ok": True, "id": int(row[0]) if row else None, "nombre": name}), 201
-        mid = _repo.get_or_create_material(name)
-        return jsonify({"ok": True, "id": mid, "nombre": name}), 201
+        return jsonify({"error": "DB no configurada"}), 500
     except Exception:
         return jsonify({"error": "No se pudo crear"}), 500
 
@@ -431,22 +416,7 @@ def admin_upload_image():
         return jsonify({"error": "No se pudo subir"}), 500
 
 
-# ---------------- Importar elementos de vitrina a DB -----------------
-
-@admin_bp.post("/import/static-products")
-def admin_import_from_static():
-    if not _is_admin_request():
-        return jsonify({"error": "No autorizado"}), 403
-    try:
-        from pathlib import Path
-        from servicios.servicio_catalogo.presentacion.rutas import PRECIOS_ESPECIFICOS
-        base_dir = Path(__file__).resolve().parents[3]
-        img_dir = base_dir / 'static' / 'img' / 'productos'
-        count = _repo.importar_desde_static(img_dir, PRECIOS_ESPECIFICOS)
-        return jsonify({"ok": True, "importados": count}), 200
-    except Exception:
-        current_app.logger.exception("Import static-products fallo")
-        return jsonify({"error": "No se pudo importar"}), 500
+# (El flujo de importación directo a Neon está en /import/static-products-to-pg)
 
 
 # ---------------- Migración SQLite → Postgres -----------------

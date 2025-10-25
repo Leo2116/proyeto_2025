@@ -760,6 +760,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
   const profileOrdersState = { page: 1, from: '', to: '', total: 0, email: '' };
   async function loadUserOrders(email, { append = false } = {}){
+    // Formateo local para Totales (evita dependencia del fmtQ interno del DOMContentLoaded)
+    const fmtQ = (n) => `Q${(Number(n) || 0).toFixed(2)}`;
     const wrap = document.getElementById('profile-orders');
     const moreBtn = document.getElementById('orders-more-btn');
     const fromInput = document.getElementById('orders-from-date');

@@ -75,6 +75,8 @@ body {
   content: "";
   position: absolute; inset: 0;
   background: linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.45));
+  /* Evitar que la capa de color intercepte clics sobre los controles del hero */
+  pointer-events: none;
 }
 .hero-content {
   position: relative; z-index: 1;

@@ -28,6 +28,26 @@ def _find_product_image(*candidates: str) -> str | None:
     return None
 
 
+def _validate_or_fallback_image(img, is_libro, nombre, id_prod):
+    # Valida /static existente o cae a imagen por id/nombre o ícono de categoría.
+    try:
+        if img and isinstance(img, str):
+            if img.startswith('/static/'):
+                rel = img.lstrip('/')
+                f = Path(__file__).resolve().parents[4] / rel
+                if f.exists():
+                    return img
+            else:
+                return img
+        found = _find_product_image(id_prod, nombre)
+        if found:
+            return found
+    except Exception:
+        pass
+    return ('/static/img/productos/categoria_libros.png' if is_libro else '/static/img/productos/categoria_utiles.png')
+
+
+
 class PGRepositorioProducto(IRepositorioProducto):
     """Repositorio de productos usando SQLAlchemy y Postgres (Neon)."""
 
@@ -50,7 +70,7 @@ class PGRepositorioProducto(IRepositorioProducto):
             # Atributos extendidos usados en otras capas
             try:
                 p.sinopsis = getattr(row, 'sinopsis', None)
-                p.portada_url = row.imagen_url or _find_product_image(row.id_producto, getattr(row, 'nombre', None))
+                p.portada_url = _validate_or_fallback_image(getattr(row, 'imagen_url', None), True, getattr(row, 'nombre', None), getattr(row, 'id_producto', None))
             except Exception:
                 pass
             return p
@@ -65,7 +85,7 @@ class PGRepositorioProducto(IRepositorioProducto):
                 marca='Generico',
             )
             try:
-                p.portada_url = row.imagen_url or _find_product_image(row.id_producto, getattr(row, 'nombre', None))
+                p.portada_url = _validate_or_fallback_image(getattr(row, 'imagen_url', None), False, getattr(row, 'nombre', None), getattr(row, 'id_producto', None))
             except Exception:
                 pass
             return p

@@ -308,7 +308,7 @@
         return (
           `\n      <article class="product-card" data-id="${id}">\n`+
           `        <img src="${portada_url}" alt="${safeAlt}" class="product-img"\n`+
-          `             onerror="this.onerror=null;this.src='https://placehold.co/280x200?text=${encodeURIComponent(tipo)}';">\n`+
+          `             onerror="this.onerror=null;this.src='${(String(tipo).toLowerCase().includes('libro') ? '/static/img/productos/categoria_libros.png' : '/static/img/productos/categoria_utiles.png')}';">\n`+
           `        <div class="product-info">\n`+
           `          <span class="product-type">${tipo}</span>\n`+
           `          <h2 class="product-name">${nombre}</h2>\n`+

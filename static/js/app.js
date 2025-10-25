@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return `
       <article class="product-card" data-id="${id}">
         <img src="${portada_url}" alt="${safeAlt}" class="product-img"
-             onerror="this.onerror=null;this.src='https://placehold.co/280x200?text=${encodeURIComponent(tipo)}';">
+             onerror="this.onerror=null;this.src='${(String(tipo).toLowerCase().includes('libro') ? '/static/img/productos/categoria_libros.png' : '/static/img/productos/categoria_utiles.png')}';">
         <div class="product-info">
           <span class="product-type">${tipo}</span>
           <h2 class="product-name">${nombre}</h2>

@@ -326,13 +326,13 @@ def admin_create_category():
         return jsonify({"error": "'nombre' es requerido"}), 400
     try:
         db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
-          if db_url:
-              engine = create_engine(db_url, future=True)
-              with engine.begin() as conn:
-                  conn.execute(text("INSERT INTO catalog_categorias(nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": name})
-                  row = conn.execute(text("SELECT id FROM catalog_categorias WHERE nombre=:n"), {"n": name}).first()
-                  return jsonify({"ok": True, "id": int(row[0]) if row else None, "nombre": name}), 201
-          return jsonify({"error": "DB no configurada"}), 500
+        if db_url:
+            engine = create_engine(db_url, future=True)
+            with engine.begin() as conn:
+                conn.execute(text("INSERT INTO catalog_categorias(nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": name})
+                row = conn.execute(text("SELECT id FROM catalog_categorias WHERE nombre=:n"), {"n": name}).first()
+                return jsonify({"ok": True, "id": int(row[0]) if row else None, "nombre": name}), 201
+        return jsonify({"error": "DB no configurada"}), 500
     except Exception:
         return jsonify({"error": "No se pudo crear"}), 500
 

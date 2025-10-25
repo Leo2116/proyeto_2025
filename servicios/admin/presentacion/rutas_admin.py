@@ -464,6 +464,76 @@ def admin_migrate_sqlite_to_pg():
         return jsonify({"error": "No se pudo migrar", "detail": str(e)}), 500
 
 
+# ---------------- Estado Neon (conteos) -----------------
+
+@admin_bp.get("/neon-status")
+def admin_neon_status():
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    try:
+        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+        if not db_url:
+            return jsonify({"ok": False, "message": "Sin SQLALCHEMY_DATABASE_URI"}), 200
+        engine = create_engine(db_url, future=True)
+        with engine.connect() as conn:
+            cnt = conn.execute(text("SELECT COUNT(1) FROM productos")).scalar() or 0
+            cats = 0
+            mats = 0
+            try:
+                cats = conn.execute(text("SELECT COUNT(1) FROM catalog_categorias")).scalar() or 0
+                mats = conn.execute(text("SELECT COUNT(1) FROM catalog_materiales")).scalar() or 0
+            except Exception:
+                pass
+            head = None
+            try:
+                row = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).first()
+                head = row[0] if row else None
+            except Exception:
+                pass
+        return jsonify({"ok": True, "productos": int(cnt), "categorias": int(cats), "materiales": int(mats), "alembic_head": head}), 200
+    except Exception:
+        current_app.logger.exception("neon-status fallo")
+        return jsonify({"ok": False, "message": "error"}), 500
+
+
+# ---------------- Importar vitrina → Postgres directo -----------------
+
+@admin_bp.post("/import/static-products-to-pg")
+def admin_import_static_to_pg():
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    try:
+        from pathlib import Path
+        from servicios.servicio_catalogo.presentacion.rutas import PRECIOS_ESPECIFICOS
+        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+        if not db_url:
+            return jsonify({"error": "Sin SQLALCHEMY_DATABASE_URI"}), 400
+        engine = create_engine(db_url, future=True)
+        img_dir = Path(__file__).resolve().parents[3] / 'static' / 'img' / 'productos'
+        exts = {'.png', '.jpg', '.jpeg', '.webp'}
+        created = 0
+        with engine.begin() as conn:
+            for file in sorted(img_dir.iterdir()):
+                if not file.is_file() or file.suffix.lower() not in exts:
+                    continue
+                stem = file.stem
+                nombre = stem.replace('_', ' ').replace('-', ' ').strip().title()
+                precio = float(PRECIOS_ESPECIFICOS.get(stem.lower(), 10.0))
+                # Insertar si no existe
+                conn.execute(text(
+                    """
+                    INSERT INTO productos (id_producto,nombre,precio,stock,tipo,autor,isbn,material,categoria,imagen_url)
+                    VALUES (:id,:nombre,:precio,:stock,'UTIL',NULL,NULL,NULL,NULL,:img)
+                    ON CONFLICT (id_producto) DO NOTHING
+                    """
+                ), {"id": stem, "nombre": nombre, "precio": precio, "stock": 0, "img": f"/static/img/productos/{file.name}"})
+                created += 1
+        return jsonify({"ok": True, "importados": created}), 200
+    except Exception:
+        current_app.logger.exception("import static to pg fallo")
+        return jsonify({"error": "No se pudo importar a PG"}), 500
+
+
 @admin_bp.post("/productos/<string:pid>/stock")
 def admin_incrementar_stock(pid: str):
     if not _is_admin():

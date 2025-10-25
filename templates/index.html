@@ -367,6 +367,7 @@
       }
 
       function attachOverrides() {
+        if (window.__DISABLE_INLINE_SEARCH) return;
         if (heroBtn) {
           heroBtn.addEventListener('click', function (e) {
             e.preventDefault(); e.stopImmediatePropagation();

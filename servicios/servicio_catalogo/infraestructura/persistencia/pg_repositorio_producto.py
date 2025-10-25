@@ -10,6 +10,22 @@ from configuracion import Config
 from inicializar_db import ProductoORM, TipoProductoEnum
 from servicios.servicio_catalogo.dominio.producto import Producto, Libro, UtilEscolar
 from servicios.servicio_catalogo.aplicacion.repositorios.repositorio_producto_interface import IRepositorioProducto
+from pathlib import Path
+
+# Directorio de imágenes estáticas para productos
+_BASE_DIR = Path(__file__).resolve().parents[4]
+PRODUCT_IMG_DIR = _BASE_DIR / "static" / "img" / "productos"
+
+def _find_product_image(*candidates: str) -> str | None:
+    for cand in candidates:
+        if not cand:
+            continue
+        stem = str(cand).strip().lower().replace(' ', '_').replace('-', '_')
+        for ext in ('.png', '.jpg', '.jpeg', '.webp'):
+            f = PRODUCT_IMG_DIR / f"{stem}{ext}"
+            if f.exists():
+                return f"/static/img/productos/{f.name}"
+    return None
 
 
 class PGRepositorioProducto(IRepositorioProducto):
@@ -34,7 +50,7 @@ class PGRepositorioProducto(IRepositorioProducto):
             # Atributos extendidos usados en otras capas
             try:
                 p.sinopsis = getattr(row, 'sinopsis', None)
-                p.portada_url = row.imagen_url
+                p.portada_url = row.imagen_url or _find_product_image(row.id_producto, getattr(row, 'nombre', None))
             except Exception:
                 pass
             return p
@@ -49,7 +65,7 @@ class PGRepositorioProducto(IRepositorioProducto):
                 marca='Generico',
             )
             try:
-                p.portada_url = row.imagen_url
+                p.portada_url = row.imagen_url or _find_product_image(row.id_producto, getattr(row, 'nombre', None))
             except Exception:
                 pass
             return p

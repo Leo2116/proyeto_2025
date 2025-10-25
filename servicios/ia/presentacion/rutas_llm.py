@@ -72,10 +72,27 @@ def _is_greeting(text: str) -> bool:
     return any(nt.startswith(_norm(g)) for g in greetings) and len(nt.split()) <= 6
 
 
+
 def _catalog_context(query: str, limit: int = 8) -> list[dict]:
+    """Obtiene contexto del catálogo para el prompt.
+    - Si el usuario pide algo genérico ("todos", "productos", "catálogo"), traer lista completa.
+    - Si la búsqueda no devuelve resultados, hacer fallback a lista completa.
+    """
     try:
         q = (query or "").strip()
-        items = _catalog_repo.buscar_productos(q) if q else _catalog_repo.obtener_todos()
+        nt = _norm(q)
+        generic_intents = {
+            "todo", "todos", "todas", "productos", "producto", "catalogo", "catálogo",
+            "lista", "listar", "muestrame", "muéstrame", "mostrar", "ver todo", "ver todos",
+        }
+
+        wants_all = (not q) or any(tok in nt for tok in generic_intents)
+
+        items = _catalog_repo.obtener_todos() if wants_all else _catalog_repo.buscar_productos(q)
+        # Fallback si búsqueda literal no encuentra nada
+        if not items:
+            items = _catalog_repo.obtener_todos()
+
         data: list[dict] = []
         for p in items[: max(1, limit)]:
             try:
@@ -90,8 +107,6 @@ def _catalog_context(query: str, limit: int = 8) -> list[dict]:
         return data
     except Exception:
         return []
-
-
 # --- Pruebas rápidas ---
 # IA:
 # curl -s -X POST "$APP_BASE_URL/api/v1/ia/chat" \

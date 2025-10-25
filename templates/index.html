@@ -290,7 +290,8 @@
         const nombre = p.nombre || p.titulo || 'Producto';
         const precio = Number(p.precio || p.price || 0);
         const tipo   = p.tipo || (p.isbn ? 'Libro' : 'UtilEscolar');
-        const img    = p.portada_url || p.imagen_url || `/static/img/productos/${id}.png`;
+        const imgDefault = ((p.tipo||'').toLowerCase().includes('libro') ? "/static/img/productos/categoria_libros.png" : "/static/img/productos/categoria_utiles.png");
+        const img    = p.portada_url || p.imagen_url || imgDefault;
         return { id, nombre, precio, tipo, portada_url: img };
       }
 

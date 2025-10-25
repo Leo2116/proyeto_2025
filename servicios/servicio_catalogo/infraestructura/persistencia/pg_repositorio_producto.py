@@ -11,6 +11,7 @@ from inicializar_db import ProductoORM, TipoProductoEnum
 from servicios.servicio_catalogo.dominio.producto import Producto, Libro, UtilEscolar
 from servicios.servicio_catalogo.aplicacion.repositorios.repositorio_producto_interface import IRepositorioProducto
 from pathlib import Path
+import shutil
 
 # Directorio de imágenes estáticas para productos
 _BASE_DIR = Path(__file__).resolve().parents[4]
@@ -29,16 +30,29 @@ def _find_product_image(*candidates: str) -> str | None:
 
 
 def _validate_or_fallback_image(img, is_libro, nombre, id_prod):
-    # Valida /static existente o cae a imagen por id/nombre o ícono de categoría.
+    """Asegura una ruta de imagen utilizable.
+    1) Si `img` apunta a /static/... y el archivo no existe, copia un placeholder a esa ruta.
+    2) Si `img` es http(s), devuélvela tal cual.
+    3) Si no hay `img`, intenta encontrar una imagen local por id/nombre.
+    4) Último recurso: ícono por categoría.
+    """
     try:
-        if img and isinstance(img, str):
-            if img.startswith('/static/'):
-                rel = img.lstrip('/')
-                f = Path(__file__).resolve().parents[4] / rel
-                if f.exists():
-                    return img
-            else:
+        if img and isinstance(img, str) and img.startswith('/static/'):
+            rel = img.lstrip('/')
+            f = Path(__file__).resolve().parents[4] / rel
+            if f.exists():
                 return img
+            # Copiar placeholder al nombre esperado
+            try:
+                f.parent.mkdir(parents=True, exist_ok=True)
+                ph = PRODUCT_IMG_DIR / ('categoria_libros.png' if is_libro else 'categoria_utiles.png')
+                if ph.exists():
+                    shutil.copyfile(ph, f)
+                    return img
+            except Exception:
+                pass
+        if img and isinstance(img, str) and (img.startswith('http://') or img.startswith('https://')):
+            return img
         found = _find_product_image(id_prod, nombre)
         if found:
             return found

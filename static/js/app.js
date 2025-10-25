@@ -637,6 +637,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch {}
           });
           btnPrint?.addEventListener('click', () => { if (printUrl) window.open(printUrl, '_blank'); });
+          try { if (printUrl) window.open(printUrl, '_blank'); } catch {}
         }
         // Restaurar acciones del footer
         try { drawerBuy.style.display = ''; } catch {}
@@ -741,17 +742,7 @@ document.addEventListener('DOMContentLoaded', () => {
         createdAt: new Date().toISOString(),
       };
       localStorage.setItem('lastInvoice', JSON.stringify(snapshot));
-      // Descargar JSON de la factura si el usuario no quiere correo
-      if (!email) {
-        const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        const num = (data && data.numero_factura) ? data.numero_factura : 'factura';
-        a.download = `${num}.json`;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-      }
+      // Ya no se descarga JSON automáticamente si no hay email
     } catch {}
     return data;
   }

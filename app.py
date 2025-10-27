@@ -21,9 +21,12 @@ def crear_app():
         template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates"),
         static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"),
     )
-    # Habilitar CORS para toda la aplicación (todos los orígenes)
-    # Necesario para permitir que el frontend (Render) consuma la API
-    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+    # Habilitar CORS para la API
+    # Si necesitas probar desde un dominio distinto, define CORS_ORIGINS
+    # como lista separada por comas: "https://mi-frontend.com,https://otro.com"
+    cors_env = os.getenv("CORS_ORIGINS", "*")
+    allowed = [o.strip() for o in cors_env.split(",") if o.strip()] if cors_env and cors_env != "*" else "*"
+    CORS(app, resources={r"/api/*": {"origins": allowed}}, supports_credentials=True)
     
     # Logging básico para producción (Render)
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()

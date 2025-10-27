@@ -44,7 +44,12 @@
         </label>
         <label class="field" style="flex:1">
           <span>Categoría</span>
-          <input type="text" id="p-categoria" />
+          <select id="p-categoria">
+            <option value="libros y textos">libros y textos</option>
+            <option value="insumos de oficina">insumos de oficina</option>
+            <option value="arte, manualidades, escritura y colorear">arte, manualidades, escritura y colorear</option>
+            <option value="escolar" selected>escolar</option>
+          </select>
         </label>
       </div>
       <div class="row">
@@ -77,6 +82,7 @@
             <th>ID</th>
             <th>Nombre</th>
             <th>Tipo</th>
+            <th>Categoría</th>
             <th>Precio</th>
             <th>Stock</th>
             <th>Imagen</th>
@@ -149,12 +155,14 @@
             <td>${p.id}</td>
             <td>${p.nombre}</td>
             <td>${p.tipo}</td>
+            <td>${p.categoria || '-'}</td>
             <td>${fmtQ(p.precio)}</td>
             <td>${p.stock ?? 0}</td>
             <td><img src="${p.portada_url || ''}" alt="" style="width:40px;height:40px;object-fit:cover"></td>
             <td>
               <button class="btn-secondary" data-accion="inc" data-id="${p.id}">+1</button>
               <button class="btn-secondary" data-accion="dec" data-id="${p.id}">-1</button>
+              <button class="btn-secondary" data-accion="edit" data-id="${p.id}">Editar</button>
             </td>`;
           tb.appendChild(tr);
         });
@@ -169,16 +177,68 @@
       if (!btn) return;
       const id = btn.getAttribute('data-id');
       const acc = btn.getAttribute('data-accion');
-      const delta = acc === 'dec' ? -1 : 1;
-      try {
-        const r = await fetch(`/api/v1/admin/productos/${id}/stock`, {
-          method: 'POST', headers: {'Content-Type': 'application/json'}, credentials:'same-origin',
-          body: JSON.stringify({ cantidad: delta })
+      if (acc === 'inc' || acc === 'dec') {
+        const delta = acc === 'dec' ? -1 : 1;
+        try {
+          const r = await fetch(`/api/v1/admin/productos/${id}/stock`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, credentials:'same-origin',
+            body: JSON.stringify({ cantidad: delta })
+          });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.error || 'No se pudo actualizar');
+          await cargarProductos();
+        } catch(e) { alert(e.message || e); }
+        return;
+      }
+      if (acc === 'edit') {
+        // Crear editor inline sencillo
+        const row = btn.closest('tr');
+        const cells = row.querySelectorAll('td');
+        const nombre = cells[1].textContent.trim();
+        const tipo = cells[2].textContent.trim();
+        const categoria = cells[3].textContent.trim();
+        const precio = cells[4].textContent.replace('Q','').trim();
+        const editor = document.createElement('tr');
+        editor.innerHTML = `
+          <td colspan="8">
+            <div class="row" style="gap:.5rem; align-items:flex-end; flex-wrap:wrap;">
+              <label class="field"><span>Nombre</span><input id="e-nombre" value="${nombre}"/></label>
+              <label class="field"><span>Tipo</span>
+                <select id="e-tipo"><option ${tipo==='Libro'?'selected':''}>Libro</option><option ${tipo!=='Libro'?'selected':''}>UtilEscolar</option></select>
+              </label>
+              <label class="field"><span>Categoría</span>
+                <select id="e-categoria">
+                  <option ${categoria==='libros y textos'?'selected':''} value="libros y textos">libros y textos</option>
+                  <option ${categoria==='insumos de oficina'?'selected':''} value="insumos de oficina">insumos de oficina</option>
+                  <option ${categoria==='arte, manualidades, escritura y colorear'?'selected':''} value="arte, manualidades, escritura y colorear">arte, manualidades, escritura y colorear</option>
+                  <option ${categoria==='escolar'?'selected':''} value="escolar">escolar</option>
+                </select>
+              </label>
+              <label class="field"><span>Precio</span><input id="e-precio" type="number" step="0.01" value="${precio}"/></label>
+              <label class="field"><span>Imagen URL</span><input id="e-img" placeholder="/static/..."/></label>
+              <button class="btn-primary" data-save>Guardar</button>
+              <button class="btn-secondary" data-cancel>Cancelar</button>
+            </div>
+          </td>`;
+        row.after(editor);
+        editor.querySelector('[data-cancel]').addEventListener('click', () => { editor.remove(); });
+        editor.querySelector('[data-save]').addEventListener('click', async () => {
+          const payload = {
+            nombre: editor.querySelector('#e-nombre').value,
+            tipo: editor.querySelector('#e-tipo').value,
+            categoria: editor.querySelector('#e-categoria').value,
+            precio: parseFloat(editor.querySelector('#e-precio').value||'0'),
+            portada_url: editor.querySelector('#e-img').value || null,
+          };
+          try {
+            const r = await fetch(`/api/v1/admin/productos/${id}/update`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body: JSON.stringify(payload) });
+            const d = await r.json().catch(()=>({}));
+            if (!r.ok) throw new Error(d.error || 'No se pudo actualizar');
+            editor.remove();
+            await cargarProductos();
+          } catch(e) { alert(e.message || e); }
         });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || 'No se pudo actualizar');
-        await cargarProductos();
-      } catch(e) { alert(e.message || e); }
+      }
     });
     // Inicial
     cargarProductos();

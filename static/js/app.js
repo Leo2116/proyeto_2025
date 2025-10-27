@@ -134,7 +134,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       const normalized = data.map(normalizeProduct);
-      if (productBox) productBox.innerHTML = normalized.map(productCardHTML).join('');
+      const toRender = (query && query.length) ? normalized : normalized.slice(0, 4);
+      if (productBox) productBox.innerHTML = toRender.map(productCardHTML).join('');
     } catch (err) {
       console.error('Error al cargar productos por categoría:', err);
       showStatus(Error al cargar productos: , true);
@@ -206,6 +207,28 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================
   // Auth (me / login / logout / register)
   // ==========================
+  // Fijar categorías definidas por negocio
+  function renderFixedCategories() {
+    const host = document.querySelector('section.categories-grid');
+    if (!host) return;
+    host.innerHTML = `
+      <article class="category-card" data-category="libros y textos" title="Ver Libros y textos">
+        <img src="/static/img/productos/categoria_libros.png" alt="Libros y textos" />
+        <div class="category-label">Libros y textos</div>
+      </article>
+      <article class="category-card" data-category="escolar" title="Ver Escolar">
+        <img src="/static/img/productos/categoria_utiles.png" alt="Escolar" />
+        <div class="category-label">Escolar</div>
+      </article>
+      <article class="category-card" data-category="insumos de oficina" title="Ver Insumos de oficina">
+        <img src="/static/img/productos/categoria_utiles.png" alt="Insumos de oficina" />
+        <div class="category-label">Insumos de oficina</div>
+      </article>
+      <article class="category-card" data-category="arte, manualidades, escritura y colorear" title="Ver Arte, manualidades, escritura y colorear">
+        <img src="/static/img/productos/categoria_utiles.png" alt="Arte, manualidades, escritura y colorear" />
+        <div class="category-label">Arte, manualidades, escritura y colorear</div>
+      </article>`;
+  }
   // Cargar categorías dinámicas desde API y renderizar tarjetas
   async function loadCategories() {
     const API_CATEGORIES = '/api/v1/catalogo/categorias';

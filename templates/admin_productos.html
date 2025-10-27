@@ -1,0 +1,187 @@
+{% extends "admin_base.html" %}
+{% block content %}
+  <h1>Productos</h1>
+  <p class="muted">Agrega nuevos productos y administra stock. Los cambios usan las APIs de <code>/api/v1/admin/*</code>.</p>
+
+  <section class="grid" style="margin:1rem 0;">
+    <h2>Agregar producto</h2>
+    <form id="form-producto" class="grid" style="max-width: 760px;">
+      <div class="row">
+        <label class="field" style="flex:1">
+          <span>Nombre</span>
+          <input type="text" id="p-nombre" required />
+        </label>
+        <label class="field">
+          <span>Tipo</span>
+          <select id="p-tipo">
+            <option value="Libro">Libro</option>
+            <option value="UtilEscolar">UtilEscolar</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Precio (Q)</span>
+          <input type="number" step="0.01" id="p-precio" required />
+        </label>
+      </div>
+      <div class="row" id="campos-libro">
+        <label class="field" style="flex:1">
+          <span>Autor/Marca</span>
+          <input type="text" id="p-autor" />
+        </label>
+        <label class="field" style="flex:1">
+          <span>ISBN/SKU</span>
+          <input type="text" id="p-isbn" />
+        </label>
+        <label class="field" style="flex:1">
+          <span>Editorial (opcional)</span>
+          <input type="text" id="p-editorial" />
+        </label>
+      </div>
+      <div class="row" id="campos-util" style="display:none;">
+        <label class="field" style="flex:1">
+          <span>Material</span>
+          <input type="text" id="p-material" />
+        </label>
+        <label class="field" style="flex:1">
+          <span>Categoría</span>
+          <input type="text" id="p-categoria" />
+        </label>
+      </div>
+      <div class="row">
+        <label class="field" style="flex:1">
+          <span>Imagen URL (opcional)</span>
+          <input type="text" id="p-img" placeholder="/static/img/productos/mi_imagen.png" />
+        </label>
+        <label class="field">
+          <span>Stock inicial</span>
+          <input type="number" id="p-stock" value="0" />
+        </label>
+      </div>
+      <div class="row" style="justify-content:flex-end;">
+        <button type="submit" class="btn-primary">Guardar</button>
+      </div>
+      <p id="p-msg" class="muted"></p>
+    </form>
+  </section>
+
+  <section class="grid" style="margin:1rem 0;">
+    <h2>Inventario</h2>
+    <div class="row" style="align-items:center;">
+      <button id="refresh" class="btn-secondary">Recargar</button>
+      <span id="inv-msg" class="muted"></span>
+    </div>
+    <div style="overflow:auto;">
+      <table id="tabla-productos">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nombre</th>
+            <th>Tipo</th>
+            <th>Precio</th>
+            <th>Stock</th>
+            <th>Imagen</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    function show(el, v) { el.style.display = v ? '' : 'none'; }
+    const selTipo = document.getElementById('p-tipo');
+    const camposLibro = document.getElementById('campos-libro');
+    const camposUtil = document.getElementById('campos-util');
+    selTipo.addEventListener('change', () => {
+      const isLibro = selTipo.value === 'Libro';
+      show(camposLibro, isLibro);
+      show(camposUtil, !isLibro);
+    });
+
+    async function crearProducto(evt) {
+      evt.preventDefault();
+      const msg = document.getElementById('p-msg');
+      msg.textContent = 'Guardando...';
+      const payload = {
+        nombre: document.getElementById('p-nombre').value.trim(),
+        tipo: document.getElementById('p-tipo').value,
+        precio: parseFloat(document.getElementById('p-precio').value || '0'),
+        autor_marca: document.getElementById('p-autor').value.trim() || null,
+        isbn_sku: document.getElementById('p-isbn').value.trim() || null,
+        editorial: document.getElementById('p-editorial').value.trim() || null,
+        material: document.getElementById('p-material').value.trim() || null,
+        categoria: document.getElementById('p-categoria').value.trim() || null,
+        portada_url: document.getElementById('p-img').value.trim() || null,
+        stock: parseInt(document.getElementById('p-stock').value || '0', 10)
+      };
+      try {
+        const res = await fetch('/api/v1/admin/productos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Error al crear');
+        msg.textContent = 'Producto creado';
+        evt.target.reset();
+        await cargarProductos();
+      } catch (e) {
+        msg.textContent = 'Error: ' + (e.message || e);
+      }
+    }
+    document.getElementById('form-producto').addEventListener('submit', crearProducto);
+
+    function fmtQ(n) { return 'Q' + (Number(n)||0).toFixed(2); }
+    async function cargarProductos() {
+      const msg = document.getElementById('inv-msg');
+      msg.textContent = 'Cargando...';
+      try {
+        const r = await fetch('/api/v1/admin/productos', { credentials:'same-origin' });
+        const arr = await r.json();
+        if (!r.ok) throw new Error(arr.error || 'Error al listar');
+        const tb = document.querySelector('#tabla-productos tbody');
+        tb.innerHTML = '';
+        arr.forEach(p => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${p.id}</td>
+            <td>${p.nombre}</td>
+            <td>${p.tipo}</td>
+            <td>${fmtQ(p.precio)}</td>
+            <td>${p.stock ?? 0}</td>
+            <td><img src="${p.portada_url || ''}" alt="" style="width:40px;height:40px;object-fit:cover"></td>
+            <td>
+              <button class="btn-secondary" data-accion="inc" data-id="${p.id}">+1</button>
+              <button class="btn-secondary" data-accion="dec" data-id="${p.id}">-1</button>
+            </td>`;
+          tb.appendChild(tr);
+        });
+        msg.textContent = `${arr.length} productos`;
+      } catch (e) {
+        msg.textContent = 'Error: ' + (e.message || e);
+      }
+    }
+    document.getElementById('refresh').addEventListener('click', cargarProductos);
+    document.querySelector('#tabla-productos tbody').addEventListener('click', async (ev) => {
+      const btn = ev.target.closest('button');
+      if (!btn) return;
+      const id = btn.getAttribute('data-id');
+      const acc = btn.getAttribute('data-accion');
+      const delta = acc === 'dec' ? -1 : 1;
+      try {
+        const r = await fetch(`/api/v1/admin/productos/${id}/stock`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'}, credentials:'same-origin',
+          body: JSON.stringify({ cantidad: delta })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || 'No se pudo actualizar');
+        await cargarProductos();
+      } catch(e) { alert(e.message || e); }
+    });
+    // Inicial
+    cargarProductos();
+  </script>
+{% endblock %}
+

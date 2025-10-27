@@ -1,0 +1,78 @@
+{% extends "admin_base.html" %}
+{% block content %}
+  <h1>Registro de Ventas</h1>
+  <p class="muted">Consulta facturas por rango de fechas y abre la vista imprimible.</p>
+
+  <section class="grid" style="margin:1rem 0;">
+    <div class="row" style="align-items:center;">
+      <label class="field"><span>Desde</span><input type="date" id="from"/></label>
+      <label class="field"><span>Hasta</span><input type="date" id="to"/></label>
+      <button id="load" class="btn-secondary">Cargar</button>
+      <span id="ventas-msg" class="muted"></span>
+    </div>
+    <div style="overflow:auto;">
+      <table id="ventas-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Número</th>
+            <th>Email</th>
+            <th>Total</th>
+            <th>Fecha</th>
+            <th>Origen</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    function fmtQ(n){ return 'Q' + (Number(n)||0).toFixed(2); }
+    async function cargar(){
+      const msg = document.getElementById('ventas-msg');
+      msg.textContent = 'Cargando...';
+      const from = document.getElementById('from').value;
+      const to = document.getElementById('to').value;
+      const params = new URLSearchParams();
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      params.set('page', '1'); params.set('limit', '50');
+      const url = '/api/v1/facturas' + (params.toString() ? ('?' + params.toString()) : '');
+      try{
+        const r = await fetch(url);
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Error al listar');
+        const items = d.items || [];
+        const tb = document.querySelector('#ventas-table tbody');
+        tb.innerHTML = '';
+        items.forEach(f => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${f.id}</td>
+            <td>${f.numero_factura}</td>
+            <td>${f.user_email || '-'}</td>
+            <td>${fmtQ(f.total)}</td>
+            <td>${f.fecha || '-'}</td>
+            <td>${f.origen || '-'}</td>
+            <td><a class="btn-secondary" href="${f.print_url}" target="_blank">Ver / Imprimir</a></td>`;
+          tb.appendChild(tr);
+        });
+        msg.textContent = `${d.total ?? items.length} resultados`;
+      }catch(e){ msg.textContent = 'Error: ' + (e.message || e); }
+    }
+    document.getElementById('load').addEventListener('click', cargar);
+    // Inicial (hoy)
+    try{
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth()+1).padStart(2,'0');
+      const d = String(now.getDate()).padStart(2,'0');
+      document.getElementById('from').value = `${y}-${m}-${d}`;
+      document.getElementById('to').value = `${y}-${m}-${d}`;
+    }catch{}
+    cargar();
+  </script>
+{% endblock %}
+

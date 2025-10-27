@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, jsonify, request, session, current_app
+from flask import Flask, render_template, jsonify, request, session, current_app, redirect, url_for
 from flask_cors import CORS
 import logging
 import os
@@ -121,13 +121,52 @@ def crear_app():
         return render_template("index.html")
 
     # Vista simple para administración (protegida por email de admin)
-    @app.route("/admin")
+    @app.route("/admin-old")
     def admin_page():
         from configuracion import Config
         email = (session.get("user_email") or "").lower().strip()
         if not email or email not in (Config.ADMIN_EMAILS or []):
             return jsonify({"error": "No autorizado"}), 403
         return render_template("admin.html")
+
+    # ---- Admin: vistas HTML separadas ----
+    def _is_admin_session() -> bool:
+        try:
+            from configuracion import Config as _Cfg
+        except Exception:
+            return False
+        email = (session.get("user_email") or "").lower().strip()
+        return bool(email and (email in (getattr(_Cfg, "ADMIN_EMAILS", []) or [])))
+
+    @app.route("/admin")
+    def admin_root():
+        if not _is_admin_session():
+            return jsonify({"error": "No autorizado"}), 403
+        return redirect(url_for("admin_productos_view"))
+
+    @app.route("/admin/productos")
+    def admin_productos_view():
+        if not _is_admin_session():
+            return jsonify({"error": "No autorizado"}), 403
+        return render_template("admin_productos.html")
+
+    @app.route("/admin/pos")
+    def admin_pos_view():
+        if not _is_admin_session():
+            return jsonify({"error": "No autorizado"}), 403
+        return render_template("admin_pos.html")
+
+    @app.route("/admin/tickets")
+    def admin_tickets_view():
+        if not _is_admin_session():
+            return jsonify({"error": "No autorizado"}), 403
+        return render_template("admin_tickets.html")
+
+    @app.route("/admin/ventas")
+    def admin_ventas_view():
+        if not _is_admin_session():
+            return jsonify({"error": "No autorizado"}), 403
+        return render_template("admin_ventas.html")
 
     @app.errorhandler(404)
     def pagina_no_encontrada(_error):

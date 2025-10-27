@@ -1,0 +1,162 @@
+{% extends "admin_base.html" %}
+{% block content %}
+  <h1>Punto de Venta (POS)</h1>
+  <p class="muted">Arma un carrito con productos del catálogo y genera una factura imprimible.</p>
+
+  <section class="grid" style="margin:1rem 0;">
+    <h2>Buscar productos</h2>
+    <div class="row">
+      <input type="text" id="q" placeholder="Buscar por nombre, autor, categoría..." style="flex:1; min-width:16rem;" />
+      <button id="buscar" class="btn-secondary">Buscar</button>
+    </div>
+    <div id="resultados" class="grid" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));"></div>
+  </section>
+
+  <section class="grid" style="margin:1rem 0;">
+    <h2>Carrito</h2>
+    <div style="overflow:auto;">
+      <table id="tabla-pos">
+        <thead>
+          <tr><th>Producto</th><th>Precio</th><th>Cant.</th><th>Subtotal</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot>
+          <tr><td colspan="3" style="text-align:right"><strong>Total</strong></td><td id="total">Q0.00</td><td></td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+      <label class="field"><span>Email (opcional)</span><input type="email" id="email"/></label>
+      <label class="field"><span>NIT (C/F por defecto)</span><input type="text" id="nit" placeholder="C/F o NIT"/></label>
+      <label class="field"><span>Método de pago</span>
+        <select id="pago"><option value="efectivo">efectivo</option><option value="tarjeta">tarjeta</option></select>
+      </label>
+      <label class="field"><span>Entrega</span>
+        <select id="entrega"><option value="tienda">tienda</option><option value="domicilio">domicilio</option></select>
+      </label>
+    </div>
+    <div id="envio-extra" class="row" style="display:none;">
+      <label class="field"><span>Nombre</span><input id="envio_nombre"/></label>
+      <label class="field"><span>Teléfono</span><input id="envio_telefono"/></label>
+      <label class="field" style="flex:1"><span>Dirección</span><input id="envio_direccion"/></label>
+    </div>
+
+    <div class="row" style="justify-content:flex-end; gap:.5rem;">
+      <button id="vaciar" class="btn-secondary">Vaciar</button>
+      <button id="facturar" class="btn-primary" disabled>Generar factura</button>
+    </div>
+    <p id="pos-msg" class="muted"></p>
+  </section>
+
+  <script>
+    const resultados = document.getElementById('resultados');
+    const tbody = document.querySelector('#tabla-pos tbody');
+    const totalEl = document.getElementById('total');
+    const msg = document.getElementById('pos-msg');
+    const cart = new Map(); // id -> {id,nombre,precio,cantidad}
+
+    document.getElementById('entrega').addEventListener('change', (e) => {
+      const show = e.target.value === 'domicilio';
+      document.getElementById('envio-extra').style.display = show ? '' : 'none';
+    });
+
+    function fmtQ(n){ return 'Q' + (Number(n)||0).toFixed(2); }
+    function renderCart(){
+      tbody.innerHTML='';
+      let total = 0;
+      cart.forEach(it => {
+        const sub = (Number(it.precio)||0) * (Number(it.cantidad)||0);
+        total += sub;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${it.nombre}</td>
+          <td>${fmtQ(it.precio)}</td>
+          <td>
+            <input type="number" min="1" value="${it.cantidad}" style="width:70px" data-id="${it.id}" class="qty"/>
+          </td>
+          <td>${fmtQ(sub)}</td>
+          <td><button class="btn-secondary" data-id="${it.id}" data-del>Quitar</button></td>`;
+        tbody.appendChild(tr);
+      });
+      totalEl.textContent = fmtQ(total);
+      document.getElementById('facturar').disabled = cart.size === 0;
+    }
+
+    tbody.addEventListener('input', (ev) => {
+      if (ev.target.classList.contains('qty')){
+        const id = ev.target.getAttribute('data-id');
+        const v = Math.max(1, parseInt(ev.target.value||'1', 10));
+        const it = cart.get(id); if (it){ it.cantidad = v; renderCart(); }
+      }
+    });
+    tbody.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('button'); if (!btn) return;
+      if (btn.hasAttribute('data-del')){
+        cart.delete(btn.getAttribute('data-id'));
+        renderCart();
+      }
+    });
+
+    async function buscar(){
+      const q = (document.getElementById('q').value||'').trim();
+      resultados.innerHTML = '<span class="muted">Buscando...</span>';
+      try {
+        const url = q ? `/api/v1/catalogo/productos?q=${encodeURIComponent(q)}` : '/api/v1/catalogo/productos';
+        const r = await fetch(url);
+        const arr = await r.json();
+        resultados.innerHTML = '';
+        (arr||[]).slice(0,48).forEach(p => {
+          const id = p.id || p.id_producto || p.isbn || p.sku;
+          const nombre = p.nombre || p.titulo || 'Producto';
+          const precio = Number(p.precio || p.price || 0);
+          const div = document.createElement('div');
+          div.className = 'grid';
+          div.style.border = '1px solid #e5e7eb';
+          div.style.padding = '.5rem';
+          div.innerHTML = `
+            <strong>${nombre}</strong>
+            <span class="muted">${fmtQ(precio)}</span>
+            <div class="row">
+              <input type="number" min="1" value="1" style="width:80px"/>
+              <button class="btn-secondary">Agregar</button>
+            </div>`;
+          div.querySelector('button').addEventListener('click', () => {
+            const qty = Math.max(1, parseInt(div.querySelector('input').value||'1',10));
+            const cur = cart.get(id) || {id, nombre, precio, cantidad:0};
+            cur.cantidad += qty; cart.set(id, cur); renderCart();
+          });
+          resultados.appendChild(div);
+        });
+        if (!resultados.children.length){ resultados.innerHTML = '<span class="muted">Sin resultados</span>'; }
+      } catch(e) { resultados.innerHTML = '<span class="muted">Error al buscar</span>'; }
+    }
+    document.getElementById('buscar').addEventListener('click', buscar);
+
+    document.getElementById('vaciar').addEventListener('click', () => { cart.clear(); renderCart(); });
+    document.getElementById('facturar').addEventListener('click', async () => {
+      msg.textContent = 'Creando factura...';
+      const items = Array.from(cart.values()).map(it => ({ id: it.id, nombre: it.nombre, precio: it.precio, cantidad: it.cantidad }));
+      const payload = {
+        items,
+        email: (document.getElementById('email').value||'').trim() || null,
+        nit: (document.getElementById('nit').value||'').trim() || null,
+        pago_metodo: (document.getElementById('pago').value||'').trim() || null,
+        entrega_metodo: (document.getElementById('entrega').value||'').trim() || 'tienda',
+        envio_nombre: (document.getElementById('envio_nombre').value||'').trim() || null,
+        envio_telefono: (document.getElementById('envio_telefono').value||'').trim() || null,
+        envio_direccion: (document.getElementById('envio_direccion').value||'').trim() || null,
+        origen: 'tienda'
+      };
+      try{
+        const r = await fetch('/api/v1/facturas', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const d = await r.json().catch(()=>({}));
+        if (!r.ok) throw new Error(d.error || 'No se pudo crear la factura');
+        msg.textContent = `Factura creada: ${d.numero_factura}`;
+        cart.clear(); renderCart();
+        if (d.id) { window.open(`/api/v1/facturas/print/${d.id}`, '_blank'); }
+      } catch(e) { msg.textContent = 'Error: ' + (e.message || e); }
+    });
+  </script>
+{% endblock %}
+

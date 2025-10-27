@@ -1,0 +1,103 @@
+{% extends "admin_base.html" %}
+{% block content %}
+  <h1>Tickets</h1>
+  <p class="muted">Gestiona tickets creados por los usuarios. Puedes asignar, dejar notas y cambiar estado.</p>
+
+  <section class="grid" style="margin:1rem 0;">
+    <div class="row" style="align-items:center;">
+      <label class="field">
+        <span>Estado</span>
+        <select id="f-status">
+          <option value="">Todos</option>
+          <option value="open">open</option>
+          <option value="assigned">assigned</option>
+          <option value="resolved">resolved</option>
+          <option value="closed">closed</option>
+        </select>
+      </label>
+      <button id="tk-refresh" class="btn-secondary">Cargar</button>
+      <span id="tk-msg" class="muted"></span>
+    </div>
+
+    <div style="overflow:auto;">
+      <table id="tk-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Pregunta</th>
+            <th>Estado</th>
+            <th>Asignado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    async function cargarTickets(){
+      const msg = document.getElementById('tk-msg');
+      msg.textContent = 'Cargando...';
+      const status = document.getElementById('f-status').value;
+      const url = status ? `/api/v1/admin/tickets?status=${encodeURIComponent(status)}` : '/api/v1/admin/tickets';
+      try{
+        const r = await fetch(url, { credentials:'same-origin' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Error al listar');
+        const tb = document.querySelector('#tk-table tbody');
+        tb.innerHTML = '';
+        (d.items || d || []).forEach(t => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${t.id}</td>
+            <td>${(t.question || '').slice(0,120)}</td>
+            <td>${t.status || '-'}</td>
+            <td>${t.assigned_to || '-'}</td>
+            <td>
+              <div class="row">
+                <input placeholder="asignar a" style="min-width:12rem" data-assign="${t.id}" />
+                <button class="btn-secondary" data-assign-btn="${t.id}">Asignar</button>
+                <select data-status="${t.id}">
+                  <option value="open">open</option>
+                  <option value="assigned">assigned</option>
+                  <option value="resolved">resolved</option>
+                  <option value="closed">closed</option>
+                </select>
+                <button class="btn-secondary" data-status-btn="${t.id}">Cambiar</button>
+              </div>
+            </td>`;
+          tb.appendChild(tr);
+        });
+        msg.textContent = `${(d.total ?? (d.items?.length ?? (d.length ?? 0)))} tickets`;
+      }catch(e){ msg.textContent = 'Error: ' + (e.message || e); }
+    }
+    document.getElementById('tk-refresh').addEventListener('click', cargarTickets);
+    document.querySelector('#tk-table').addEventListener('click', async (ev) => {
+      const btn = ev.target.closest('button');
+      if (!btn) return;
+      const id = btn.getAttribute('data-assign-btn') || btn.getAttribute('data-status-btn');
+      if (!id) return;
+      try {
+        if (btn.hasAttribute('data-assign-btn')){
+          const input = document.querySelector(`input[data-assign="${id}"]`);
+          const assigned_to = (input?.value || '').trim();
+          if (!assigned_to) return;
+          const r = await fetch(`/api/v1/admin/tickets/${id}/assign`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body: JSON.stringify({ assigned_to }) });
+          const d = await r.json().catch(()=>({}));
+          if (!r.ok) throw new Error(d.error || 'No se pudo asignar');
+        } else if (btn.hasAttribute('data-status-btn')){
+          const sel = document.querySelector(`select[data-status="${id}"]`);
+          const status = sel?.value || 'open';
+          const r = await fetch(`/api/v1/admin/tickets/${id}/status`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body: JSON.stringify({ status }) });
+          const d = await r.json().catch(()=>({}));
+          if (!r.ok) throw new Error(d.error || 'No se pudo cambiar estado');
+        }
+        await cargarTickets();
+      } catch(e) { alert(e.message || e); }
+    });
+    // Inicial
+    cargarTickets();
+  </script>
+{% endblock %}
+

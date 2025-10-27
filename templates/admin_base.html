@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel de Administración</title>
+  <link href="/static/css/style.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/phosphor-icons"></script>
+  <style>
+    .admin-nav { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; padding:.75rem; border-bottom:1px solid #ddd; }
+    .admin-nav a { text-decoration:none; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+    .grid { display:grid; gap:.75rem; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { border: 1px solid #e5e7eb; padding: .5rem; text-align:left; }
+    thead th { background:#f8fafc; }
+    .muted { color:#6b7280; font-size:.9rem; }
+    .badge-ok { background:#d1fae5; color:#065f46; padding:.1rem .35rem; border-radius:.25rem; }
+    .badge-warn { background:#fee2e2; color:#991b1b; padding:.1rem .35rem; border-radius:.25rem; }
+    .field { display:grid; gap:.25rem; }
+    .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:flex-end; }
+    input, select { padding:.5rem; border:1px solid #d1d5db; border-radius:.35rem; min-width: 10rem; }
+  </style>
+</head>
+<body>
+  <header class="admin-nav">
+    <strong style="margin-right:.5rem;"><i class="ph-shield-check"></i> Admin</strong>
+    <a class="btn-secondary" href="/admin/productos">Productos</a>
+    <a class="btn-secondary" href="/admin/pos">POS</a>
+    <a class="btn-secondary" href="/admin/tickets">Tickets</a>
+    <a class="btn-secondary" href="/admin/ventas">Ventas</a>
+    <span style="flex:1"></span>
+    <a class="btn-secondary" href="/">Volver a la tienda</a>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    // Protección básica del panel (oculta contenido si no es admin)
+    (function(){
+      fetch('/api/v1/admin/check', { credentials: 'same-origin' })
+        .then(r => r.json()).then(d => {
+          if (!d || !d.admin) {
+            document.body.innerHTML = '<div class="container"><h2>403 - No autorizado</h2><p class="muted">Debes iniciar sesión como administrador.</p><a class="btn-secondary" href="/">Volver</a></div>';
+          }
+        }).catch(() => {
+          document.body.innerHTML = '<div class="container"><h2>403 - No autorizado</h2><p class="muted">Debes iniciar sesión como administrador.</p><a class="btn-secondary" href="/">Volver</a></div>';
+        });
+    })();
+  </script>
+</body>
+</html>
+

@@ -119,8 +119,28 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </article>
     `;
-  }
+}
 
+  // Cargar productos por categoría (sin tocar la búsqueda existente)
+  async function loadProductsByCategoria(cat) {
+    if (productBox) productBox.innerHTML = '';
+    showStatus(Cargando productos · Categoría: );
+    try {
+      const url = ${API_PRODUCTS}?categoria=;
+      const data = await fetchJSON(url);
+      hideStatus();
+      if (!Array.isArray(data) || data.length === 0) {
+        showStatus(No se encontraron productos para la categoría ""., true);
+        return;
+      }
+      const normalized = data.map(normalizeProduct);
+      const toRender = (query && query.length) ? normalized : normalized.slice(0, 4);
+      if (productBox) productBox.innerHTML = toRender.map(productCardHTML).join('');
+    } catch (err) {
+      console.error('Error al cargar productos por categoría:', err);
+      showStatus(Error al cargar productos: , true);
+    }
+  }
   async function loadProducts(query = '') {
     if (productBox) productBox.innerHTML = '';
     showStatus(query ? `Buscando "${query}"…` : 'Cargando productos…');
@@ -148,7 +168,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const card = e.target.closest && e.target.closest('.category-card');
     if (!card) return;
     const q = card.getAttribute('data-query') || '';
-    loadProducts(q);
+    const categoria = card.getAttribute('data-category') || '';
+    if (categoria) {
+      // Nueva ruta: filtrar por categoría
+      if (typeof loadProductsByCategoria === 'function') {
+        loadProductsByCategoria(categoria);
+      } else {
+        loadProducts('', { categoria });
+      }
+    } else {
+      loadProducts(q);
+    }
     document.getElementById('product-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
@@ -177,6 +207,56 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================
   // Auth (me / login / logout / register)
   // ==========================
+  // Fijar categorías definidas por negocio
+  function renderFixedCategories() {
+    const host = document.querySelector('section.categories-grid');
+    if (!host) return;
+    host.innerHTML = `
+      <article class="category-card" data-category="libros y textos" title="Ver Libros y textos">
+        <img src="/static/img/productos/categoria_libros.png" alt="Libros y textos" />
+        <div class="category-label">Libros y textos</div>
+      </article>
+      <article class="category-card" data-category="escolar" title="Ver Escolar">
+        <img src="/static/img/productos/categoria_utiles.png" alt="Escolar" />
+        <div class="category-label">Escolar</div>
+      </article>
+      <article class="category-card" data-category="insumos de oficina" title="Ver Insumos de oficina">
+        <img src="/static/img/productos/categoria_utiles.png" alt="Insumos de oficina" />
+        <div class="category-label">Insumos de oficina</div>
+      </article>
+      <article class="category-card" data-category="arte, manualidades, escritura y colorear" title="Ver Arte, manualidades, escritura y colorear">
+        <img src="/static/img/productos/categoria_utiles.png" alt="Arte, manualidades, escritura y colorear" />
+        <div class="category-label">Arte, manualidades, escritura y colorear</div>
+      </article>`;
+  }
+  // Cargar categorías dinámicas desde API y renderizar tarjetas
+  async function loadCategories() {
+    const API_CATEGORIES = '/api/v1/catalogo/categorias';
+    try {
+      const data = await fetchJSON(API_CATEGORIES);
+      const items = (data && data.items) || [];
+      if (!items.length) return;
+      let grid = document.getElementById('categories-dynamic');
+      if (!grid) {
+        grid = document.createElement('div');
+        grid.id = 'categories-dynamic';
+        grid.className = 'categories-grid';
+        const host = document.querySelector('section.categories-grid');
+        if (!host) return;
+        host.appendChild(grid);
+      }
+      grid.innerHTML = items.map(it => {
+        const name = String(it.categoria || '').trim();
+        const total = Number(it.total || 0);
+        return `
+          <article class="category-card" data-category="${name}" title="${name} (${total})">
+            <div class="category-label">${name}</div>
+          </article>`;
+      }).join('');
+    } catch (e) {
+      // silencioso
+    }
+  }
   function waitForRecaptcha(cb, tries = 0) {
     const gre = getGre();
     if (gre && typeof gre.render === 'function') return cb();
@@ -684,7 +764,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================
   refreshUser();
   loadCart();
-  loadProducts('');
+  loadProducts('');\n  loadCategories();
 
   // ==========================
   // Integraciones (helpers)

@@ -167,6 +167,7 @@ def admin_listar_productos():
                 "tipo": tipo,
                 "autor_marca": r[5] if tipo=='Libro' else None,
                 "isbn_sku": r[6] if tipo=='Libro' else None,
+                "categoria": r[8],
                 "sinopsis": None,
                 "portada_url": r[9],
                 "stock": int(r[3] or 0),
@@ -552,6 +553,70 @@ def admin_incrementar_stock(pid: str):
     except Exception:
         current_app.logger.exception("PG stock fallo")
         return jsonify({"error": "No se pudo actualizar el stock."}), 500
+
+
+@admin_bp.post("/productos/<string:pid>/update")
+def admin_actualizar_producto(pid: str):
+    """Actualiza campos del producto. Admite: nombre, precio, tipo, categoria, portada_url,
+    autor_marca, isbn_sku, stock. Solo admin sesión.
+    """
+    if not _is_admin():
+        return jsonify({"error": "No autorizado"}), 403
+    body = request.get_json(silent=True) or {}
+    fields = {}
+    # Normalizar entradas
+    if "nombre" in body:
+        v = (body.get("nombre") or "").strip()
+        if v:
+            fields["nombre"] = v
+    if "precio" in body:
+        try:
+            fields["precio"] = float(body.get("precio") or 0)
+        except Exception:
+            return jsonify({"error": "precio inválido"}), 400
+    if "stock" in body:
+        try:
+            fields["stock"] = int(body.get("stock") or 0)
+        except Exception:
+            return jsonify({"error": "stock inválido"}), 400
+    if "categoria" in body:
+        v = (body.get("categoria") or "").strip()
+        if v:
+            fields["categoria"] = v
+    if "portada_url" in body:
+        v = (body.get("portada_url") or "").strip()
+        fields["imagen_url"] = v or None
+    if "autor_marca" in body:
+        fields["autor"] = (body.get("autor_marca") or None)
+    if "isbn_sku" in body:
+        fields["isbn"] = (body.get("isbn_sku") or None)
+    if "tipo" in body:
+        t = (body.get("tipo") or "").strip()
+        if t not in ("Libro", "UtilEscolar"):
+            return jsonify({"error": "tipo inválido"}), 400
+        fields["tipo"] = ("LIBRO" if t == "Libro" else "UTIL")
+
+    if not fields:
+        return jsonify({"error": "Nada para actualizar"}), 400
+
+    try:
+        db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+        if not db_url:
+            return jsonify({"error": "DB no configurada"}), 500
+        engine = create_engine(db_url, future=True)
+        # Construir SQL dinámico
+        sets = []
+        params = {"id": pid}
+        for k, v in fields.items():
+            sets.append(f"{k} = :{k}")
+            params[k] = v
+        set_sql = ", ".join(sets)
+        with engine.begin() as conn:
+            conn.execute(text(f"UPDATE productos SET {set_sql} WHERE id_producto = :id"), params)
+        return jsonify({"ok": True, "id": pid}), 200
+    except Exception:
+        current_app.logger.exception("PG update producto fallo")
+        return jsonify({"error": "No se pudo actualizar el producto."}), 500
 
 
 @admin_bp.get("/diag")

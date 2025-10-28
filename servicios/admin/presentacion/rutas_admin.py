@@ -619,7 +619,7 @@ def admin_subir_imagen_producto(pid: str):
 
 
 @admin_bp.post("/productos/<string:pid>/update")
-def admin_actualizar_producto(pid: str):
+def admin_actualizar_producto_post(pid: str):
     """Actualiza campos del producto. Admite: nombre, precio, tipo, categoria, portada_url,
     autor_marca, isbn_sku, stock. Solo admin sesión.
     """

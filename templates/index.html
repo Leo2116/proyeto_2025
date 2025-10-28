@@ -370,13 +370,59 @@
           const card = e.target.closest && e.target.closest('.category-card');
           if (!card) return;
           e.preventDefault(); e.stopImmediatePropagation();
-          const q = card.getAttribute('data-query') || '';
-          searchAll(q);
+          const __cat = card.getAttribute('data-category');
+          if (__cat) {
+            (async () => {
+              if (productBox) productBox.innerHTML = '';
+              showStatus(`Cargando productos: ${__cat}`);
+              try {
+                const data = await fetchJSON(`/api/v1/catalogo/productos?categoria=${encodeURIComponent(__cat)}`);
+                hideStatus();
+                const list = Array.isArray(data) ? data : [];
+                if (!list.length) {
+                  showStatus(`No se encontraron productos para "${__cat}".`, true);
+                } else {
+                  const normalized = list.map(normalizeProduct);
+                  if (productBox) productBox.innerHTML = normalized.map(productCardHTML).join('');
+                }
+              } catch (err) {
+                hideStatus();
+                showStatus(`Error al cargar productos: ${err.message}`, true);
+              }
+            })();
+          } else {
+            const q = card.getAttribute('data-query') || '';
+            searchAll(q);
+          }
           document.getElementById('product-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, true);
       }
 
       attachOverrides();
+      // Reemplazar la grilla de categorías por las 4 definidas
+      (function(){
+        try {
+          const host = document.querySelector('section.categories-grid');
+          if (!host) return;
+          host.innerHTML = `
+            <article class="category-card" data-category="libros y textos" title="Ver Libros y textos">
+              <img src="/static/img/productos/categoria_libros.png" alt="Libros y textos" />
+              <div class="category-label">Libros y textos</div>
+            </article>
+            <article class="category-card" data-category="escolar" title="Ver Escolar">
+              <img src="/static/img/productos/categoria_utiles.png" alt="Escolar" />
+              <div class="category-label">Escolar</div>
+            </article>
+            <article class="category-card" data-category="insumos de oficina" title="Ver Insumos de oficina">
+              <img src="/static/img/productos/categoria_utiles.png" alt="Insumos de oficina" />
+              <div class="category-label">Insumos de oficina</div>
+            </article>
+            <article class="category-card" data-category="arte, manualidades, escritura y colorear" title="Ver Arte, manualidades, escritura y colorear">
+              <img src="/static/img/productos/categoria_utiles.png" alt="Arte, manualidades, escritura y colorear" />
+              <div class="category-label">Arte, manualidades, escritura y colorear</div>
+            </article>`;
+        } catch {}
+      })();
       // Cargar productos existentes de la base de datos al iniciar
       try { searchAll(''); } catch (e) { /* noop */ }
     })();

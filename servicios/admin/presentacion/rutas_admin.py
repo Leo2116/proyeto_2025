@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, text
 import os
 import re
 import requests
+from io import BytesIO
 from typing import Any, Dict
 
 from configuracion import Config
@@ -553,6 +554,68 @@ def admin_incrementar_stock(pid: str):
     except Exception:
         current_app.logger.exception("PG stock fallo")
         return jsonify({"error": "No se pudo actualizar el stock."}), 500
+
+
+@admin_bp.post("/productos/<string:pid>/imagen")
+def admin_subir_imagen_producto(pid: str):
+    """Sube una imagen para el producto y la guarda como WebP con nombre <id>.webp.
+    - multipart/form-data con campo 'file'
+    - Actualiza productos.imagen_url a /static/img/productos/<id>.webp
+    """
+    if not _is_admin_request():
+        return jsonify({"error": "No autorizado"}), 403
+    if 'file' not in request.files:
+        return jsonify({"error": "archivo 'file' es requerido (multipart/form-data)"}), 400
+    f = request.files['file']
+    if not f or f.filename == '':
+        return jsonify({"error": "Archivo vacío"}), 400
+    try:
+        from PIL import Image
+    except Exception:
+        return jsonify({"error": "Servidor sin soporte de imágenes (Pillow)"}), 500
+
+    try:
+        from pathlib import Path
+        base_dir = Path(__file__).resolve().parents[3]
+        img_dir = base_dir / 'static' / 'img' / 'productos'
+        img_dir.mkdir(parents=True, exist_ok=True)
+
+        # Abrir imagen y convertir a WebP
+        raw = f.read()
+        if not raw:
+            return jsonify({"error": "Archivo vacío"}), 400
+        im = Image.open(BytesIO(raw))
+        # Convertir a RGB con fondo blanco si tiene alfa
+        if im.mode in ("RGBA", "LA"):
+            bg = Image.new("RGB", im.size, (255, 255, 255))
+            if im.mode == "RGBA":
+                bg.paste(im, mask=im.split()[-1])
+            else:
+                bg.paste(im.convert("RGBA"), mask=im.convert("RGBA").split()[-1])
+            im = bg
+        elif im.mode != "RGB":
+            im = im.convert("RGB")
+
+        dest = img_dir / f"{pid}.webp"
+        im.save(dest.as_posix(), format='WEBP', quality=85, method=6)
+        url = f"/static/img/productos/{pid}.webp"
+
+        # Actualizar DB
+        try:
+            db_url = getattr(Config, "SQLALCHEMY_DATABASE_URI", None)
+            if not db_url:
+                return jsonify({"error": "DB no configurada"}), 500
+            engine = create_engine(db_url, future=True)
+            with engine.begin() as conn:
+                conn.execute(text("UPDATE productos SET imagen_url=:u WHERE id_producto=:id"), {"u": url, "id": pid})
+        except Exception:
+            current_app.logger.exception("PG actualizar imagen_url fallo")
+            return jsonify({"error": "No se pudo actualizar la imagen en DB"}), 500
+
+        return jsonify({"ok": True, "url": url}), 201
+    except Exception:
+        current_app.logger.exception("Upload WebP fallo")
+        return jsonify({"error": "No se pudo procesar la imagen"}), 500
 
 
 @admin_bp.post("/productos/<string:pid>/update")

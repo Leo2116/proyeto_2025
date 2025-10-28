@@ -5,7 +5,7 @@
 
   <section class="grid" style="margin:1rem 0;">
     <h2>Agregar producto</h2>
-    <form id="form-producto" class="grid" style="max-width: 760px;">
+    <form id="form-producto" class="grid" style="max-width: 760px;" enctype="multipart/form-data" onsubmit="return false;">
       <div class="row">
         <label class="field" style="flex:1">
           <span>Nombre</span>
@@ -56,6 +56,10 @@
         <label class="field" style="flex:1">
           <span>Imagen URL (opcional)</span>
           <input type="text" id="p-img" placeholder="/static/img/productos/mi_imagen.png" />
+        </label>
+        <label class="field" style="flex:1">
+          <span>Subir imagen (opcional)</span>
+          <input type="file" id="p-file" accept="image/*" />
         </label>
         <label class="field">
           <span>Stock inicial</span>
@@ -131,6 +135,23 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Error al crear');
         msg.textContent = 'Producto creado';
+        const fileEl = document.getElementById('p-file');
+        const file = fileEl && fileEl.files && fileEl.files[0];
+        if (data && data.id && file) {
+          const fd = new FormData();
+          fd.append('file', file);
+          const up = await fetch(`/api/v1/admin/productos/${encodeURIComponent(data.id)}/imagen`, {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin'
+          });
+          const upj = await up.json().catch(() => ({}));
+          if (!up.ok) {
+            msg.textContent = 'Producto creado, pero falló subir imagen: ' + (upj.error || '');
+          } else {
+            msg.textContent = 'Producto creado y imagen subida';
+          }
+        }
         evt.target.reset();
         await cargarProductos();
       } catch (e) {
@@ -216,6 +237,7 @@
               </label>
               <label class="field"><span>Precio</span><input id="e-precio" type="number" step="0.01" value="${precio}"/></label>
               <label class="field"><span>Imagen URL</span><input id="e-img" placeholder="/static/..."/></label>
+              <label class="field"><span>Subir imagen</span><input id="e-file" type="file" accept="image/*"/></label>
               <button class="btn-primary" data-save>Guardar</button>
               <button class="btn-secondary" data-cancel>Cancelar</button>
             </div>
@@ -234,6 +256,15 @@
             const r = await fetch(`/api/v1/admin/productos/${id}/update`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body: JSON.stringify(payload) });
             const d = await r.json().catch(()=>({}));
             if (!r.ok) throw new Error(d.error || 'No se pudo actualizar');
+            const efile = editor.querySelector('#e-file');
+            const file = efile && efile.files && efile.files[0];
+            if (file) {
+              const fd = new FormData();
+              fd.append('file', file);
+              const up = await fetch(`/api/v1/admin/productos/${encodeURIComponent(id)}/imagen`, { method:'POST', body: fd, credentials:'same-origin' });
+              const upj = await up.json().catch(()=>({}));
+              if (!up.ok) throw new Error(upj.error || 'No se pudo subir la imagen');
+            }
             editor.remove();
             await cargarProductos();
           } catch(e) { alert(e.message || e); }

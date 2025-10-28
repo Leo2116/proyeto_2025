@@ -8,6 +8,7 @@ import re
 import requests
 from io import BytesIO
 from typing import Any, Dict
+from pathlib import Path
 
 from configuracion import Config
 from utils.jwt import decode_jwt, JWTError
@@ -21,6 +22,24 @@ _tickets_repo = TicketsRepo()
 def _is_admin() -> bool:
     email = (session.get("user_email") or "").lower().strip()
     return bool(email and (email in (Config.ADMIN_EMAILS or [])))
+
+
+def _admin_find_image(id_prod: str | None, nombre: str | None) -> str | None:
+    try:
+        base = Path(__file__).resolve().parents[3]
+        img_dir = base / 'static' / 'img' / 'productos'
+        def norm(s: str) -> str:
+            return (s or '').strip().lower().replace(' ', '_').replace('-', '_')
+        for cand in (norm(id_prod or ''), norm(nombre or '')):
+            if not cand:
+                continue
+            for ext in ('.webp', '.png', '.jpg', '.jpeg'):
+                f = img_dir / f"{cand}{ext}"
+                if f.exists():
+                    return f"/static/img/productos/{f.name}"
+    except Exception:
+        return None
+    return None
 
 
 def _ensure_schema():
@@ -161,6 +180,17 @@ def admin_listar_productos():
         for r in rows:
             t = str(r[4]).upper() if r[4] is not None else ''
             tipo = 'Libro' if 'LIB' in t else 'UtilEscolar'
+            # Portada: preferir imagen local por id/nombre (WebP>PNG>JPG), luego imagen_url si es /static y existe, o dejar la DB tal cual.
+            portada = _admin_find_image(r[0], r[1])
+            if not portada:
+                try:
+                    img = r[9]
+                    if img and isinstance(img, str) and img.startswith('/static/'):
+                        rel = img.lstrip('/')
+                        if (Path(__file__).resolve().parents[3] / rel).exists():
+                            portada = img
+                except Exception:
+                    portada = None
             out.append({
                 "id": r[0],
                 "nombre": r[1],
@@ -170,7 +200,7 @@ def admin_listar_productos():
                 "isbn_sku": r[6] if tipo=='Libro' else None,
                 "categoria": r[8],
                 "sinopsis": None,
-                "portada_url": r[9],
+                "portada_url": portada or r[9],
                 "stock": int(r[3] or 0),
                 "eliminado": 0,
             })

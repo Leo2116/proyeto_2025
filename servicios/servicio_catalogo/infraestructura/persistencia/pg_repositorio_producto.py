@@ -21,12 +21,31 @@ def _find_product_image(*candidates: str) -> str | None:
         if not cand:
             continue
         stem = str(cand).strip().lower().replace(' ', '_').replace('-', '_')
-        for ext in ('.png', '.jpg', '.jpeg', '.webp'):
+        for ext in ('.webp', '.png', '.jpg', '.jpeg'):
             f = PRODUCT_IMG_DIR / f"{stem}{ext}"
             if f.exists():
                 return f"/static/img/productos/{f.name}"
     return None
 
+
+def _preferred_image(img, is_libro: bool, nombre: str | None, id_prod: str | None) -> str:
+    """Devuelve la URL de imagen priorizando archivos locales (WebP>PNG>JPG).
+    Orden: local por id/nombre > /static válida en DB > URL externa > ícono por categoría.
+    """
+    try:
+        found = _find_product_image(id_prod, nombre)
+        if found:
+            return found
+        if img and isinstance(img, str) and img.startswith('/static/'):
+            rel = img.lstrip('/')
+            f = Path(__file__).resolve().parents[4] / rel
+            if f.exists():
+                return img
+        if img and isinstance(img, str) and not img.startswith('/static/'):
+            return img
+    except Exception:
+        pass
+    return ('/static/img/productos/categoria_libros.png' if is_libro else '/static/img/productos/categoria_utiles.png')
 
 def _validate_or_fallback_image(img, is_libro, nombre, id_prod):
     # Valida /static existente o cae a imagen por id/nombre o ícono de categoría.
@@ -70,7 +89,7 @@ class PGRepositorioProducto(IRepositorioProducto):
             # Atributos extendidos usados en otras capas
             try:
                 p.sinopsis = getattr(row, 'sinopsis', None)
-                p.portada_url = _validate_or_fallback_image(getattr(row, 'imagen_url', None), True, getattr(row, 'nombre', None), getattr(row, 'id_producto', None))
+                p.portada_url = _preferred_image(getattr(row, 'imagen_url', None), True, getattr(row, 'nombre', None), getattr(row, 'id_producto', None))
             except Exception:
                 pass
             return p
@@ -85,7 +104,7 @@ class PGRepositorioProducto(IRepositorioProducto):
                 marca='Generico',
             )
             try:
-                p.portada_url = _validate_or_fallback_image(getattr(row, 'imagen_url', None), False, getattr(row, 'nombre', None), getattr(row, 'id_producto', None))
+                p.portada_url = _preferred_image(getattr(row, 'imagen_url', None), False, getattr(row, 'nombre', None), getattr(row, 'id_producto', None))
             except Exception:
                 pass
             return p
